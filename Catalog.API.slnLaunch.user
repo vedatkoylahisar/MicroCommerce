@@ -1,0 +1,19 @@
+[
+  {
+    "Name": "Yeni Profil",
+    "Projects": [
+      {
+        "Path": "Catalog.API\\Catalog.API.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "Basket.API\\Basket.API.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "OcelotGateway\\OcelotGateway.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]
