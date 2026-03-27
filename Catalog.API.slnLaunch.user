@@ -13,6 +13,10 @@
       {
         "Path": "OcelotGateway\\OcelotGateway.csproj",
         "Action": "Start"
+      },
+      {
+        "Path": "Identity.API\\Identity.API.csproj",
+        "Action": "Start"
       }
     ]
   }

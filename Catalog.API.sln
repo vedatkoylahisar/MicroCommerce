@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OcelotGateway", "OcelotGate
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventBus.Messages", "EventBus.Messages\EventBus.Messages.csproj", "{A7EFED5D-18B9-4415-9543-EBA9361CB322}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Identity.API", "Identity.API\Identity.API.csproj", "{8A302EEE-F8EC-487A-B7FF-256467C3D6B3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{A7EFED5D-18B9-4415-9543-EBA9361CB322}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A7EFED5D-18B9-4415-9543-EBA9361CB322}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A7EFED5D-18B9-4415-9543-EBA9361CB322}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A302EEE-F8EC-487A-B7FF-256467C3D6B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A302EEE-F8EC-487A-B7FF-256467C3D6B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A302EEE-F8EC-487A-B7FF-256467C3D6B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A302EEE-F8EC-487A-B7FF-256467C3D6B3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
