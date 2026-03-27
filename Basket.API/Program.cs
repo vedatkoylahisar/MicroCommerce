@@ -1,4 +1,6 @@
 using Basket.API.Repositories;
+using MassTransit;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +14,14 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetValue<string>("CacheSettings:ConnectionString");
+});
+
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        cfg.Host("rabbitmq://localhost");
+    });
 });
 
 builder.Services.AddScoped<IBasketRepository, BasketRepository>();

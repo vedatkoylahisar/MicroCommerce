@@ -1,6 +1,8 @@
 ﻿using Basket.API.Models;
 using Basket.API.Repositories;
+using MassTransit;
 using Microsoft.AspNetCore.Mvc;
+using EventBus.Messages.Events;
 
 namespace Basket.API.Controllers
 {
@@ -9,11 +11,7 @@ namespace Basket.API.Controllers
     public class BasketController : ControllerBase
     {
         private readonly IBasketRepository _repository;
-
-        public BasketController(IBasketRepository repository)
-        {
-            _repository = repository;
-        }
+        private readonly IPublishEndpoint _publishEndpoint;
 
         [HttpGet("{userName}")]
         public async Task<IActionResult> GetBasket(string userName)
@@ -33,6 +31,25 @@ namespace Basket.API.Controllers
         {
             await _repository.DeleteBasket(userName);
             return Ok();
+        }
+        public BasketController(IBasketRepository repository, IPublishEndpoint publishEndpoint)
+        {
+            _repository = repository;
+            _publishEndpoint = publishEndpoint;
+        }
+
+        [HttpPost("checkout")]
+        public async Task<IActionResult> Checkout(BasketCheckoutEvent checkoutEvent)
+        {
+            var basket = await _repository.GetBasket(checkoutEvent.UserName);
+            if (basket == null) return NotFound();
+
+            checkoutEvent.TotalPrice = basket.TotalPrice;
+
+            await _publishEndpoint.Publish(checkoutEvent);
+            await _repository.DeleteBasket(checkoutEvent.UserName);
+
+            return Accepted();
         }
     }
 }
