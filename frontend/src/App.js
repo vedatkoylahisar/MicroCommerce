@@ -2,42 +2,164 @@ import { useState, useEffect } from 'react';
 import './App.css';
 
 const GATEWAY = 'https://localhost:7014';
-const USER = 'vedat';
 
 export default function App() {
-  const [page, setPage] = useState('shop');
-  const [basket, setBasket] = useState({ userName: USER, items: [] });
+  const [user, setUser] = useState(null);
+  const [page, setPage] = useState('home');
+  const [basket, setBasket] = useState({ items: [] });
+
+  useEffect(() => {
+    const saved = localStorage.getItem('user');
+    if (saved) setUser(JSON.parse(saved));
+  }, []);
+
+  const logout = () => {
+    localStorage.removeItem('user');
+    setUser(null);
+    setBasket({ items: [] });
+    setPage('home');
+  };
 
   return (
     <div className="app">
-      <Header page={page} setPage={setPage} itemCount={basket.items.length} />
-      {page === 'shop' && <ShopPage basket={basket} setBasket={setBasket} />}
-      {page === 'basket' && <BasketPage basket={basket} setBasket={setBasket} setPage={setPage} />}
-      {page === 'admin' && <AdminPage />}
+      <Header user={user} page={page} setPage={setPage} itemCount={basket.items.length} logout={logout} />
+      {page === 'home' && <HomePage setPage={setPage} />}
+      {page === 'login' && <LoginPage setUser={setUser} setPage={setPage} />}
+      {page === 'register' && <RegisterPage setPage={setPage} />}
+      {page === 'shop' && <ShopPage user={user} basket={basket} setBasket={setBasket} setPage={setPage} />}
+      {page === 'basket' && <BasketPage user={user} basket={basket} setBasket={setBasket} setPage={setPage} />}
     </div>
   );
 }
 
-function Header({ page, setPage, itemCount }) {
+function Header({ user, page, setPage, itemCount, logout }) {
   return (
     <header className="header">
       <div className="header-inner">
-        <div className="logo" onClick={() => setPage('shop')}>
+        <div className="logo" onClick={() => setPage('home')}>
           <span className="logo-icon">⚡</span>
           <span className="logo-text">SwiftShop</span>
         </div>
         <nav className="nav">
           <button className={page === 'shop' ? 'nav-btn active' : 'nav-btn'} onClick={() => setPage('shop')}>Mağaza</button>
-          <button className="basket-btn" onClick={() => setPage('basket')}>
-            🛒 Sepet {itemCount > 0 && <span className="badge">{itemCount}</span>}
-          </button>
+          {user ? (
+            <>
+              <span className="user-greeting">Merhaba, {user.firstName}!</span>
+              <button className="nav-btn" onClick={logout}>Çıkış</button>
+              <button className="basket-btn" onClick={() => setPage('basket')}>
+                🛒 {itemCount > 0 && <span className="badge">{itemCount}</span>}
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="nav-btn" onClick={() => setPage('login')}>Giriş Yap</button>
+              <button className="register-btn" onClick={() => setPage('register')}>Kayıt Ol</button>
+            </>
+          )}
         </nav>
       </div>
     </header>
   );
 }
 
-function ShopPage({ basket, setBasket }) {
+function HomePage({ setPage }) {
+  return (
+    <div>
+      <div className="hero">
+        <h2>En İyi Fırsatlar</h2>
+        <p>Binlerce ürün, en uygun fiyatlarla</p>
+        <button className="hero-btn" onClick={() => setPage('shop')}>Alışverişe Başla</button>
+      </div>
+      <div className="features">
+        <div className="feature-card">🚀<h3>Hızlı Teslimat</h3><p>Aynı gün kargo</p></div>
+        <div className="feature-card">🔒<h3>Güvenli Ödeme</h3><p>256-bit SSL şifreleme</p></div>
+        <div className="feature-card">↩️<h3>Kolay İade</h3><p>30 gün içinde iade</p></div>
+      </div>
+    </div>
+  );
+}
+
+function LoginPage({ setUser, setPage }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const login = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${GATEWAY}/api/Auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      if (!res.ok) { setError('E-posta veya şifre hatalı'); return; }
+      const data = await res.json();
+      localStorage.setItem('user', JSON.stringify(data));
+      setUser(data);
+      setPage('shop');
+    } catch {
+      setError('Bağlantı hatası');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2>Giriş Yap</h2>
+        {error && <div className="error-msg">{error}</div>}
+        <input className="auth-input" placeholder="E-posta" value={email} onChange={e => setEmail(e.target.value)} />
+        <input className="auth-input" type="password" placeholder="Şifre" value={password} onChange={e => setPassword(e.target.value)} />
+        <button className="auth-btn" onClick={login} disabled={loading}>{loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}</button>
+        <p className="auth-link">Hesabın yok mu? <span onClick={() => setPage('register')}>Kayıt Ol</span></p>
+      </div>
+    </div>
+  );
+}
+
+function RegisterPage({ setPage }) {
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const register = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${GATEWAY}/api/Auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      if (!res.ok) { setError('Kayıt başarısız, bilgileri kontrol edin'); return; }
+      setPage('login');
+    } catch {
+      setError('Bağlantı hatası');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2>Kayıt Ol</h2>
+        {error && <div className="error-msg">{error}</div>}
+        <input className="auth-input" placeholder="Ad" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} />
+        <input className="auth-input" placeholder="Soyad" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} />
+        <input className="auth-input" placeholder="E-posta" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+        <input className="auth-input" type="password" placeholder="Şifre" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+        <button className="auth-btn" onClick={register} disabled={loading}>{loading ? 'Kayıt yapılıyor...' : 'Kayıt Ol'}</button>
+        <p className="auth-link">Hesabın var mı? <span onClick={() => setPage('login')}>Giriş Yap</span></p>
+      </div>
+    </div>
+  );
+}
+
+function ShopPage({ user, basket, setBasket, setPage }) {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -50,14 +172,15 @@ function ShopPage({ basket, setBasket }) {
   }, []);
 
   const addToBasket = async (product) => {
+    if (!user) { setPage('login'); return; }
     const existing = basket.items.find(i => i.productId === product.id);
     const newItems = existing
       ? basket.items.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i)
       : [...basket.items, { productId: product.id, productName: product.name, price: product.price, quantity: 1 }];
-    const updated = { userName: USER, items: newItems };
+    const updated = { userName: user.email, items: newItems };
     const res = await fetch(`${GATEWAY}/api/Basket`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
       body: JSON.stringify(updated)
     });
     setBasket(await res.json());
@@ -70,9 +193,7 @@ function ShopPage({ basket, setBasket }) {
 
   return (
     <main>
-      <div className="hero">
-        <h2>En İyi Fırsatlar</h2>
-        <p>Binlerce ürün, en uygun fiyatlarla</p>
+      <div className="shop-header">
         <input className="search" placeholder="🔍  Ürün ara..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
       {loading ? <div className="loading">Yükleniyor...</div> : (
@@ -97,14 +218,14 @@ function ShopPage({ basket, setBasket }) {
   );
 }
 
-function BasketPage({ basket, setBasket, setPage }) {
+function BasketPage({ user, basket, setBasket, setPage }) {
   const checkout = async () => {
     await fetch(`${GATEWAY}/api/Basket/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userName: USER, firstName: 'Vedat', lastName: 'Koylahisar', emailAddress: 'vedat@test.com' })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
+      body: JSON.stringify({ userName: user.email, firstName: user.firstName, lastName: '', emailAddress: user.email })
     });
-    setBasket({ userName: USER, items: [] });
+    setBasket({ items: [] });
     alert('Siparişiniz alındı!');
     setPage('shop');
   };
@@ -125,10 +246,7 @@ function BasketPage({ basket, setBasket, setPage }) {
             {basket.items.map(i => (
               <div className="basket-item" key={i.productId}>
                 <div className="item-icon">📦</div>
-                <div className="item-info">
-                  <h4>{i.productName}</h4>
-                  <span>{i.quantity} adet</span>
-                </div>
+                <div className="item-info"><h4>{i.productName}</h4><span>{i.quantity} adet</span></div>
                 <span className="item-price">{(i.price * i.quantity).toLocaleString('tr-TR')} ₺</span>
               </div>
             ))}
@@ -142,39 +260,6 @@ function BasketPage({ basket, setBasket, setPage }) {
           </div>
         </div>
       )}
-    </main>
-  );
-}
-
-function AdminPage() {
-  const [form, setForm] = useState({ name: '', category: '', description: '', price: '' });
-  const [success, setSuccess] = useState(false);
-
-  const submit = async () => {
-    await fetch(`${GATEWAY}/api/Products`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, price: parseFloat(form.price) })
-    });
-    setForm({ name: '', category: '', description: '', price: '' });
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
-  };
-
-  return (
-    <main className="admin-page">
-      <div className="admin-card">
-        <h2>➕ Yeni Ürün Ekle</h2>
-        {success && <div className="success-msg">✅ Ürün başarıyla eklendi!</div>}
-        {['name', 'category', 'description', 'price'].map(f => (
-          <input key={f} className="admin-input"
-            placeholder={f === 'name' ? 'Ürün Adı' : f === 'category' ? 'Kategori' : f === 'description' ? 'Açıklama' : 'Fiyat (₺)'}
-            value={form[f]}
-            onChange={e => setForm({ ...form, [f]: e.target.value })}
-          />
-        ))}
-        <button className="checkout-btn" onClick={submit}>Ürünü Ekle</button>
-      </div>
     </main>
   );
 }
