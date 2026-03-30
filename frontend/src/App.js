@@ -23,6 +23,7 @@ export default function App() {
   return (
     <div className="app">
       <Header user={user} page={page} setPage={setPage} itemCount={basket.items.length} logout={logout} />
+      
       {page === 'home' && <HomePage setPage={setPage} />}
       {page === 'login' && <LoginPage setUser={setUser} setPage={setPage} />}
       {page === 'register' && <RegisterPage setPage={setPage} />}
@@ -31,17 +32,24 @@ export default function App() {
       {page === 'profile' && <ProfilePage user={user} setUser={setUser} setPage={setPage} />}
       {page === 'orders' && <OrdersPage user={user} setPage={setPage} />}
       {page === 'messages' && <MessagesPage user={user} setPage={setPage} />}
+      {page === 'admin' && <AdminPage gateway={GATEWAY} />}
     </div>
   );
 }
 
 function Header({ user, page, setPage, itemCount, logout }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [logoClick, setLogoClick] = useState(0);
 
   return (
     <header className="header">
       <div className="header-inner">
-        <div className="logo" onClick={() => setPage('home')}>
+        <div className="logo" onClick={() => {
+            const count = logoClick + 1;
+            setLogoClick(count);
+            if (count >= 5) { setPage('admin'); setLogoClick(0); }
+            else setPage('home');
+        }}>
           <span className="logo-icon">⚡</span>
           <span className="logo-text">SwiftShop</span>
         </div>
@@ -806,6 +814,98 @@ function OrdersPage({ user, setPage }) {
           </div>
         )
       )}
+    </main>
+  );
+}
+
+function AdminPage({ gateway }) {
+  const [tab, setTab] = useState('products');
+  const [products, setProducts] = useState([]);
+  const [form, setForm] = useState({ name: '', category: '', description: '', price: '' });
+  const [success, setSuccess] = useState('');
+  const [auth, setAuth] = useState(false);
+  const [pass, setPass] = useState('');
+
+  useEffect(() => {
+    fetch(`${gateway}/api/Products`)
+      .then(r => r.json())
+      .then(setProducts);
+  }, [success]);
+
+  if (!auth) return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2>🔒 Admin Girişi</h2>
+        <input className="auth-input" type="password" placeholder="Admin şifresi" value={pass} onChange={e => setPass(e.target.value)} />
+        <button className="auth-btn" onClick={() => { if (pass === 'Admin123!') setAuth(true); else alert('Hatalı şifre'); }}>Giriş</button>
+      </div>
+    </div>
+  ); 
+
+  const addProduct = async () => {
+    await fetch(`${gateway}/api/Products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, price: parseFloat(form.price) })
+    });
+    setForm({ name: '', category: '', description: '', price: '' });
+    setSuccess('Ürün eklendi: ' + form.name);
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const deleteProduct = async (id) => {
+    await fetch(`${gateway}/api/Products/${id}`, { method: 'DELETE' });
+    setSuccess('Silindi');
+    setTimeout(() => setSuccess(''), 2000);
+  };
+
+  return (
+    <main className="admin-page">
+      <div className="admin-layout">
+        <div className="admin-sidebar">
+          <h3>⚙️ Admin Panel</h3>
+          <div className={tab === 'products' ? 'sidebar-item active' : 'sidebar-item'} onClick={() => setTab('products')}>📦 Ürünler</div>
+          <div className={tab === 'add' ? 'sidebar-item active' : 'sidebar-item'} onClick={() => setTab('add')}>➕ Ürün Ekle</div>
+        </div>
+        <div className="admin-content">
+          {success && <div className="success-msg">✅ {success}</div>}
+          
+          {tab === 'products' && (
+            <div>
+              <h2>Ürün Listesi</h2>
+              <table className="admin-table">
+                <thead>
+                  <tr><th>İsim</th><th>Kategori</th><th>Fiyat</th><th>İşlem</th></tr>
+                </thead>
+                <tbody>
+                  {products.map(p => (
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td>{p.category}</td>
+                      <td>{p.price.toLocaleString('tr-TR')} ₺</td>
+                      <td><button className="delete-btn" onClick={() => deleteProduct(p.id)}>Sil</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {tab === 'add' && (
+            <div className="admin-card">
+              <h2>Yeni Ürün Ekle</h2>
+              {['name', 'category', 'description', 'price'].map(f => (
+                <input key={f} className="admin-input"
+                  placeholder={f === 'name' ? 'Ürün Adı' : f === 'category' ? 'Kategori' : f === 'description' ? 'Açıklama' : 'Fiyat (₺)'}
+                  value={form[f]}
+                  onChange={e => setForm({ ...form, [f]: e.target.value })}
+                />
+              ))}
+              <button className="checkout-btn" onClick={addProduct}>Ürünü Ekle</button>
+            </div>
+          )}
+        </div>
+      </div>
     </main>
   );
 }
