@@ -17,6 +17,10 @@
       {
         "Path": "Identity.API\\Identity.API.csproj",
         "Action": "Start"
+      },
+      {
+        "Path": "Ordering.API\\Ordering.API.csproj",
+        "Action": "Start"
       }
     ]
   }

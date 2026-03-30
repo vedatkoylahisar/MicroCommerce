@@ -35,20 +35,33 @@ namespace Identity.API.Controllers
             var result = await _userManager.CreateAsync(user, dto.Password);
             if (!result.Succeeded) return BadRequest(result.Errors);
 
-            return Ok("Kayýt baþarýlý");
+            return Ok("Kayï¿½t baï¿½arï¿½lï¿½");
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto dto)
         {
             var user = await _userManager.FindByEmailAsync(dto.Email);
-            if (user == null) return Unauthorized("Kullanýcý bulunamadý");
+            if (user == null) return Unauthorized("Kullanï¿½cï¿½ bulunamadï¿½");
 
             var valid = await _userManager.CheckPasswordAsync(user, dto.Password);
-            if (!valid) return Unauthorized("Þifre hatalý");
+            if (!valid) return Unauthorized("ï¿½ifre hatalï¿½");
 
             var token = GenerateToken(user);
             return Ok(new { token, email = user.Email, firstName = user.FirstName });
+        }
+
+        [HttpGet("users")]
+        public IActionResult GetUsers()
+        {
+            var users = _userManager.Users.Select(u => new
+            {
+                email = u.Email,
+                firstName = u.FirstName,
+                lastName = u.LastName
+            }).ToList();
+
+            return Ok(users);
         }
 
         private string GenerateToken(AppUser user)

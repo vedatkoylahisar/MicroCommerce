@@ -22,7 +22,7 @@
         }
       ],
       "UpstreamPathTemplate": "/api/Basket/{everything}",
-      "UpstreamHttpMethod": [ "GET", "PUT", "DELETE" ]
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ]
     },
     {
       "DownstreamPathTemplate": "/api/Auth/{everything}",
@@ -35,6 +35,18 @@
       ],
       "UpstreamPathTemplate": "/api/Auth/{everything}",
       "UpstreamHttpMethod": [ "GET", "POST" ]
+    },
+    {
+      "DownstreamPathTemplate": "/api/Ordering/{everything}",
+      "DownstreamScheme": "https",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 7230
+        }
+      ],
+      "UpstreamPathTemplate": "/api/Ordering/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE", "PATCH" ]
     }
   ],
   "GlobalConfiguration": {

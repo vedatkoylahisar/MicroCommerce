@@ -45,6 +45,12 @@ namespace Basket.API.Controllers
             if (basket == null) return NotFound();
 
             checkoutEvent.TotalPrice = basket.TotalPrice;
+            checkoutEvent.Items = basket.Items.Select(i => new EventBus.Messages.Events.BasketCheckoutItem
+            {
+                ProductName = i.ProductName,
+                Quantity = i.Quantity,
+                Price = i.Price
+            }).ToList();
 
             await _publishEndpoint.Publish(checkoutEvent);
             await _repository.DeleteBasket(checkoutEvent.UserName);
