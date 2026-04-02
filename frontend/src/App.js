@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-const GATEWAY = 'https://localhost:7014';
+const GATEWAY = process.env.REACT_APP_GATEWAY || 'https://localhost:7014';
 
 export default function App() {
   const [user, setUser] = useState(null);

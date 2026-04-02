@@ -20,7 +20,7 @@ builder.Services.AddMassTransit(x =>
 {
     x.UsingRabbitMq((ctx, cfg) =>
     {
-        cfg.Host("rabbitmq://localhost");
+        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
     });
 });
 
