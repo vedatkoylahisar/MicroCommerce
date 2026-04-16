@@ -109,6 +109,18 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  messages-api:
+    build:
+      context: .
+      dockerfile: Messages.API/Dockerfile
+    environment:
+      - ASPNETCORE_URLS=http://+:80
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=MessagesDb;Username=postgres;Password=postgres123
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # ── Gateway ─────────────────────────────────────────────────
   gateway:
     build:
@@ -124,6 +136,7 @@ services:
       - basket-api
       - identity-api
       - ordering-api
+      - messages-api
 
   # ── Frontend ─────────────────────────────────────────────────
   frontend:

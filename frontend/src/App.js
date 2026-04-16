@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-const GATEWAY = process.env.REACT_APP_GATEWAY || 'https://localhost:7014';
+const GATEWAY = process.env.REACT_APP_GATEWAY || 'http://localhost:7014';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -981,16 +981,30 @@ function AdminPage({ gateway }) {
   const [pass, setPass] = useState('');
   const [orderFilter, setOrderFilter] = useState('all');
   const [productSearch, setProductSearch] = useState('');
+  const [adminMessages, setAdminMessages] = useState([]);
+  const [adminActiveConvId, setAdminActiveConvId] = useState(null);
+  const [adminReply, setAdminReply] = useState('');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   const loadProducts = () => fetch(`${gateway}/api/Products`).then(r => r.json()).then(setProducts).catch(() => {});
   const loadOrders = () => fetch(`${gateway}/api/Ordering/orders`).then(r => r.json()).then(setOrders).catch(() => {});
   const loadCustomers = () => fetch(`${gateway}/api/Auth/users`).then(r => r.json()).then(setCustomers).catch(() => {});
+  const loadMessages = () => fetch(`${gateway}/api/Messages`).then(r => r.json()).then(setAdminMessages).catch(() => {});
+  const sendAdminReply = async () => {
+    if (!adminReply.trim() || !adminActiveConvId) return;
+    await fetch(`${gateway}/api/Messages/${adminActiveConvId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: adminReply.trim() })
+    });
+    setAdminReply('');
+    loadMessages();
+  };
 
   useEffect(() => {
     if (!auth) return;
-    loadProducts(); loadOrders(); loadCustomers();
+    loadProducts(); loadOrders(); loadCustomers(); loadMessages();
   }, [auth]);
 
   if (!auth) return (
@@ -1055,6 +1069,7 @@ function AdminPage({ gateway }) {
     { key: 'products', icon: '▦', label: 'Ürünler' },
     { key: 'orders', icon: '◉', label: 'Siparişler' },
     { key: 'customers', icon: '◎', label: 'Müşteriler' },
+    { key: 'messages', icon: '✉', label: 'Mesajlar' },
   ];
 
   return (
@@ -1245,6 +1260,65 @@ function AdminPage({ gateway }) {
               </table>
             </div>
           )}
+
+          {tab === 'messages' && (() => {
+            const adminActiveConv = adminMessages.find(m => m.id === adminActiveConvId);
+            return (
+              <div className="messages-layout">
+                <div className="conv-list">
+                  {adminMessages.length === 0 ? (
+                    <div className="empty-state" style={{ padding: '40px 20px' }}><span className="empty-icon">💬</span><p>Henüz mesaj yok</p></div>
+                  ) : (
+                    adminMessages.map(conv => (
+                      <div key={conv.id} className={`conv-item ${adminActiveConvId === conv.id ? 'active' : ''}`}
+                        onClick={() => { setAdminActiveConvId(conv.id); loadMessages(); }}>
+                        <div className="conv-avatar">{conv.sellerAvatar}</div>
+                        <div className="conv-info">
+                          <div className="conv-top-row">
+                            <span className="conv-seller">{conv.sellerName}</span>
+                          </div>
+                          <div className="conv-bottom-row">
+                            <span className="conv-preview">{conv.lastMessage}</span>
+                          </div>
+                          <span className="conv-order">{conv.userEmail} — {conv.orderId}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="chat-panel">
+                  {adminActiveConv ? (
+                    <>
+                      <div className="chat-header">
+                        <div className="chat-header-info">
+                          <div className="conv-avatar sm">{adminActiveConv.sellerAvatar}</div>
+                          <div>
+                            <div className="chat-seller-name">{adminActiveConv.sellerName}</div>
+                            <div className="chat-order-ref">{adminActiveConv.userEmail}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="chat-messages">
+                        {adminActiveConv.messages?.map(msg => (
+                          <div key={msg.id} className={`chat-bubble ${msg.from === 'seller' ? 'mine' : 'theirs'}`}>
+                            <p>{msg.text}</p>
+                            <span className="bubble-time">{new Date(msg.time).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="chat-input-area">
+                        <input className="chat-input" placeholder="Satıcı olarak yanıtla..." value={adminReply}
+                          onChange={e => setAdminReply(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendAdminReply()} />
+                        <button className="chat-send-btn" onClick={sendAdminReply} disabled={!adminReply.trim()}>Gönder</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="chat-placeholder"><span className="empty-icon">💬</span><p>Bir konuşma seçin</p></div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </main>
@@ -1257,6 +1331,8 @@ function MessagesPage({ user, setPage }) {
   const [activeConv, setActiveConv] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showNewConv, setShowNewConv] = useState(false);
+  const [newConvForm, setNewConvForm] = useState({ sellerName: '', orderId: '', message: '' });
 
   useEffect(() => {
     if (!user) { setPage('login'); return; }
@@ -1309,15 +1385,53 @@ function MessagesPage({ user, setPage }) {
     }
   ];
 
-  const sendMessage = () => {
+  const reloadConversations = async () => {
+    try {
+      const r = await fetch(`${GATEWAY}/api/Messages/${user.email}`, { headers: { 'Authorization': `Bearer ${user.token}` } });
+      if (r.ok) setConversations(await r.json());
+    } catch (_) {}
+  };
+
+  const createConversation = async () => {
+    if (!newConvForm.sellerName.trim() || !newConvForm.message.trim()) return;
+    try {
+      const res = await fetch(`${GATEWAY}/api/Messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userEmail: user.email, sellerName: newConvForm.sellerName.trim(), sellerAvatar: null, orderId: newConvForm.orderId.trim() || 'Genel', initialMessage: null })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await fetch(`${GATEWAY}/api/Messages/${data.id}/messages`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: newConvForm.message.trim() })
+        });
+        setNewConvForm({ sellerName: '', orderId: '', message: '' });
+        setShowNewConv(false);
+        await reloadConversations();
+      }
+    } catch (_) {}
+  };
+
+  const sendMessage = async () => {
     if (!newMessage.trim() || !activeConv) return;
-    const msg = { id: Date.now(), from: 'user', text: newMessage.trim(), time: new Date().toISOString() };
+    const text = newMessage.trim();
+    const time = new Date().toISOString();
+    const msg = { id: Date.now(), from: 'user', text, time };
     const updated = conversations.map(c =>
-      c.id === activeConv.id ? { ...c, messages: [...c.messages, msg], lastMessage: msg.text, lastTime: msg.time } : c
+      c.id === activeConv.id ? { ...c, messages: [...c.messages, msg], lastMessage: text, lastTime: time } : c
     );
     setConversations(updated);
     setActiveConv({ ...activeConv, messages: [...activeConv.messages, msg] });
     setNewMessage('');
+    try {
+      await fetch(`${GATEWAY}/api/Messages/${activeConv.id}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+    } catch (_) {}
   };
 
   const formatTime = (iso) => new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -1336,9 +1450,31 @@ function MessagesPage({ user, setPage }) {
   return (
     <main className="messages-page">
       <h2>Mesajlarım</h2>
+      {showNewConv && (
+        <div className="admin-modal-overlay" onClick={() => setShowNewConv(false)}>
+          <div className="admin-modal" onClick={e => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h3>Yeni Mesaj</h3>
+              <button className="modal-close" onClick={() => setShowNewConv(false)}>✕</button>
+            </div>
+            <input className="admin-input" placeholder="Satıcı / Mağaza adı" value={newConvForm.sellerName}
+              onChange={e => setNewConvForm({ ...newConvForm, sellerName: e.target.value })} />
+            <input className="admin-input" placeholder="Sipariş ID (opsiyonel)" value={newConvForm.orderId}
+              onChange={e => setNewConvForm({ ...newConvForm, orderId: e.target.value })} />
+            <input className="admin-input" placeholder="Mesajınız" value={newConvForm.message}
+              onChange={e => setNewConvForm({ ...newConvForm, message: e.target.value })}
+              onKeyDown={e => e.key === 'Enter' && createConversation()} />
+            <div className="modal-actions">
+              <button className="checkout-btn" onClick={createConversation}>Gönder</button>
+              <button className="btn-secondary" onClick={() => setShowNewConv(false)}>İptal</button>
+            </div>
+          </div>
+        </div>
+      )}
       {loading ? <div className="loading">Yükleniyor...</div> : (
         <div className="messages-layout">
           <div className="conv-list">
+            <button className="admin-add-btn" style={{ margin: '12px', width: 'calc(100% - 24px)' }} onClick={() => setShowNewConv(true)}>+ Yeni Mesaj</button>
             {conversations.length === 0 ? (
               <div className="empty-state" style={{ padding: '40px 20px' }}><span className="empty-icon">💬</span><p>Henüz mesajınız yok</p></div>
             ) : (
