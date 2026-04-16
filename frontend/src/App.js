@@ -20,10 +20,12 @@ export default function App() {
     setPage('home');
   };
 
+  if (window.location.pathname === '/admin') return <AdminPage gateway={GATEWAY} />;
+
   return (
     <div className="app">
       <Header user={user} page={page} setPage={setPage} itemCount={basket.items.length} logout={logout} />
-      
+
       {page === 'home' && <HomePage setPage={setPage} />}
       {page === 'login' && <LoginPage setUser={setUser} setPage={setPage} />}
       {page === 'register' && <RegisterPage setPage={setPage} />}
@@ -32,24 +34,17 @@ export default function App() {
       {page === 'profile' && <ProfilePage user={user} setUser={setUser} setPage={setPage} />}
       {page === 'orders' && <OrdersPage user={user} setPage={setPage} />}
       {page === 'messages' && <MessagesPage user={user} setPage={setPage} />}
-      {page === 'admin' && <AdminPage gateway={GATEWAY} />}
     </div>
   );
 }
 
 function Header({ user, page, setPage, itemCount, logout }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [logoClick, setLogoClick] = useState(0);
 
   return (
     <header className="header">
       <div className="header-inner">
-        <div className="logo" onClick={() => {
-            const count = logoClick + 1;
-            setLogoClick(count);
-            if (count >= 5) { setPage('admin'); setLogoClick(0); }
-            else setPage('home');
-        }}>
+        <div className="logo" onClick={() => setPage('home')}>
           <span className="logo-icon">⚡</span>
           <span className="logo-text">SwiftShop</span>
         </div>
@@ -978,8 +973,11 @@ function AdminPage({ gateway }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [toast, setToast] = useState('');
   const [auth, setAuth] = useState(false);
-  const [pass, setPass] = useState('');
+  const [adminUser, setAdminUser] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+  const [authError, setAuthError] = useState('');
   const [orderFilter, setOrderFilter] = useState('all');
+
   const [productSearch, setProductSearch] = useState('');
   const [adminMessages, setAdminMessages] = useState([]);
   const [adminActiveConvId, setAdminActiveConvId] = useState(null);
@@ -1007,14 +1005,36 @@ function AdminPage({ gateway }) {
     loadProducts(); loadOrders(); loadCustomers(); loadMessages();
   }, [auth]);
 
+  const adminLogin = async () => {
+    setAuthError('');
+    try {
+      const res = await fetch(`${gateway}/api/Auth/admin-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: adminUser, password: adminPass })
+      });
+      if (res.ok) {
+        setAuth(true);
+      } else {
+        setAuthError('Geçersiz kullanıcı adı veya şifre');
+      }
+    } catch {
+      setAuthError('Sunucuya bağlanılamadı');
+    }
+  };
+
   if (!auth) return (
     <div className="auth-page">
       <div className="auth-card">
         <h2>Admin Girişi</h2>
-        <input className="auth-input" type="password" placeholder="Admin şifresi"
-          value={pass} onChange={e => setPass(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && (pass === 'Admin123!' ? setAuth(true) : alert('Hatalı şifre'))} />
-        <button className="auth-btn" onClick={() => { if (pass === 'Admin123!') setAuth(true); else alert('Hatalı şifre'); }}>Giriş</button>
+        {authError && <div className="auth-error">{authError}</div>}
+        <input className="auth-input" type="text" placeholder="Kullanıcı adı"
+          value={adminUser} onChange={e => setAdminUser(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && adminLogin()} />
+        <input className="auth-input" type="password" placeholder="Şifre"
+          value={adminPass} onChange={e => setAdminPass(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && adminLogin()} />
+        <button className="auth-btn" onClick={adminLogin}>Giriş</button>
       </div>
     </div>
   );

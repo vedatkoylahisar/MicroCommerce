@@ -51,6 +51,32 @@ namespace Identity.API.Controllers
             return Ok(new { token, email = user.Email, firstName = user.FirstName });
         }
 
+        [HttpPost("admin-login")]
+        public IActionResult AdminLogin([FromBody] AdminLoginDto dto)
+        {
+            var adminUsername = _config["Admin:Username"];
+            var adminPassword = _config["Admin:Password"];
+
+            if (string.IsNullOrEmpty(adminUsername) || string.IsNullOrEmpty(adminPassword))
+                return StatusCode(503, "Admin credentials not configured");
+
+            if (dto.Username != adminUsername || dto.Password != adminPassword)
+                return Unauthorized("Geçersiz kullanıcı adı veya şifre");
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var claims = new[] { new Claim(ClaimTypes.Role, "Admin"), new Claim(ClaimTypes.Name, dto.Username) };
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddHours(8),
+                signingCredentials: creds
+            );
+
+            return Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token) });
+        }
+
         [HttpGet("users")]
         public IActionResult GetUsers()
         {
@@ -99,6 +125,12 @@ namespace Identity.API.Controllers
     public class LoginDto
     {
         public string Email { get; set; }
+        public string Password { get; set; }
+    }
+
+    public class AdminLoginDto
+    {
+        public string Username { get; set; }
         public string Password { get; set; }
     }
 }

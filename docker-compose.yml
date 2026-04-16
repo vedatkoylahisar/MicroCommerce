@@ -90,6 +90,8 @@ services:
       - ASPNETCORE_URLS=http://+:80
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=IdentityDb;Username=postgres;Password=postgres123
+      - Admin__Username=admin
+      - Admin__Password=Admin123!
     depends_on:
       postgres:
         condition: service_healthy
