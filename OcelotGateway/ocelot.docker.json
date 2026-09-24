@@ -44,6 +44,51 @@
       ],
       "UpstreamPathTemplate": "/api/Messages/{everything}",
       "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ]
+    },
+    {
+      "DownstreamPathTemplate": "/health",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "catalog-api", "Port": 80 }
+      ],
+      "UpstreamPathTemplate": "/health/catalog",
+      "UpstreamHttpMethod": [ "GET" ]
+    },
+    {
+      "DownstreamPathTemplate": "/health",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "basket-api", "Port": 80 }
+      ],
+      "UpstreamPathTemplate": "/health/basket",
+      "UpstreamHttpMethod": [ "GET" ]
+    },
+    {
+      "DownstreamPathTemplate": "/health",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "identity-api", "Port": 80 }
+      ],
+      "UpstreamPathTemplate": "/health/identity",
+      "UpstreamHttpMethod": [ "GET" ]
+    },
+    {
+      "DownstreamPathTemplate": "/health",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "ordering-api", "Port": 80 }
+      ],
+      "UpstreamPathTemplate": "/health/ordering",
+      "UpstreamHttpMethod": [ "GET" ]
+    },
+    {
+      "DownstreamPathTemplate": "/health",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        { "Host": "messages-api", "Port": 80 }
+      ],
+      "UpstreamPathTemplate": "/health/messages",
+      "UpstreamHttpMethod": [ "GET" ]
     }
   ],
   "GlobalConfiguration": {

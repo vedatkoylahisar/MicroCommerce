@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Ordering.API.Data;
 using Ordering.API.Models;
+using System.Security.Claims;
 
 namespace Ordering.API.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class OrderingController : ControllerBase
     {
@@ -16,9 +19,15 @@ namespace Ordering.API.Controllers
             _context = context;
         }
 
+        private bool IsOwnerOrAdmin(string? email) =>
+            User.IsInRole("Admin") ||
+            string.Equals(User.FindFirstValue(ClaimTypes.Email), email, StringComparison.OrdinalIgnoreCase);
+
         [HttpGet("orders/{email}")]
         public async Task<IActionResult> GetOrdersByEmail(string email)
         {
+            if (!IsOwnerOrAdmin(email)) return Forbid();
+
             var orders = await _context.Orders
                 .Include(o => o.Items)
                 .Where(o => o.Email == email)
@@ -44,6 +53,7 @@ namespace Ordering.API.Controllers
         }
 
         [HttpGet("orders")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllOrders()
         {
             var orders = await _context.Orders
@@ -68,6 +78,7 @@ namespace Ordering.API.Controllers
         }
 
         [HttpPatch("orders/{id}/status")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateOrderStatus(int id, [FromBody] string status)
         {
             var order = await _context.Orders.FindAsync(id);
@@ -87,6 +98,7 @@ namespace Ordering.API.Controllers
         {
             var order = await _context.Orders.FindAsync(id);
             if (order == null) return NotFound();
+            if (!IsOwnerOrAdmin(order.Email)) return Forbid();
             if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
                 return BadRequest("Bu sipariş iptal edilemez.");
 
@@ -100,6 +112,7 @@ namespace Ordering.API.Controllers
         {
             var order = await _context.Orders.FindAsync(id);
             if (order == null) return NotFound();
+            if (!IsOwnerOrAdmin(order.Email)) return Forbid();
 
             _context.Orders.Remove(order);
             await _context.SaveChangesAsync();

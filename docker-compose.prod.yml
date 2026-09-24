@@ -1,0 +1,142 @@
+# AWS sunucusunda kullanilir: docker compose -f docker-compose.prod.yml --env-file .env up -d
+# Image'lar GitHub Actions ile GHCR'a push edilir, burada build yok.
+x-common: &common
+  restart: unless-stopped
+  environment: &common-env
+    ASPNETCORE_URLS: http://+:80
+    ASPNETCORE_ENVIRONMENT: Production
+    Jwt__Key: ${JWT_KEY}
+
+services:
+
+  # ── Infrastructure (portlar disariya acik DEGIL) ───────────
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  # ── Microservices ───────────────────────────────────────────
+  catalog-api:
+    <<: *common
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-catalog-api:${TAG:-latest}
+    environment:
+      <<: *common-env
+      DatabaseSettings__ConnectionString: mongodb://mongo:27017
+      DatabaseSettings__DatabaseName: CatalogDb
+      DatabaseSettings__CollectionName: Products
+      RabbitMQ__Host: rabbitmq://rabbitmq
+    depends_on:
+      mongo: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  basket-api:
+    <<: *common
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-basket-api:${TAG:-latest}
+    environment:
+      <<: *common-env
+      CacheSettings__ConnectionString: redis:6379
+      RabbitMQ__Host: rabbitmq://rabbitmq
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  identity-api:
+    <<: *common
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-identity-api:${TAG:-latest}
+    environment:
+      <<: *common-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=IdentityDb;Username=postgres;Password=${POSTGRES_PASSWORD}
+      Admin__Username: ${ADMIN_USERNAME}
+      Admin__Password: ${ADMIN_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  ordering-api:
+    <<: *common
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-ordering-api:${TAG:-latest}
+    environment:
+      <<: *common-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=OrderingDb;Username=postgres;Password=${POSTGRES_PASSWORD}
+      RabbitMQ__Host: rabbitmq://rabbitmq
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  messages-api:
+    <<: *common
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-messages-api:${TAG:-latest}
+    environment:
+      <<: *common-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=MessagesDb;Username=postgres;Password=${POSTGRES_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # ── Gateway (tarayicidan erisilir) ──────────────────────────
+  gateway:
+    <<: *common
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-gateway:${TAG:-latest}
+    ports:
+      - "7014:80"
+    depends_on:
+      catalog-api:
+        condition: service_healthy
+      basket-api:
+        condition: service_healthy
+      identity-api:
+        condition: service_healthy
+      ordering-api:
+        condition: service_healthy
+      messages-api:
+        condition: service_healthy
+
+  # ── Frontend ────────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/${GITHUB_OWNER}/microcommerce-frontend:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  postgres_data:

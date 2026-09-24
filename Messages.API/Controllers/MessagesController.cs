@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Messages.API.Data;
 using Messages.API.Models;
+using System.Security.Claims;
 
 namespace Messages.API.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class MessagesController : ControllerBase
     {
@@ -16,7 +19,13 @@ namespace Messages.API.Controllers
             _context = context;
         }
 
+        private bool IsOwner(string? email) =>
+            string.Equals(User.FindFirstValue(ClaimTypes.Email), email, StringComparison.OrdinalIgnoreCase);
+
+        private bool IsOwnerOrAdmin(string? email) => User.IsInRole("Admin") || IsOwner(email);
+
         [HttpGet]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllConversations()
         {
             var conversations = await _context.Conversations
@@ -52,6 +61,8 @@ namespace Messages.API.Controllers
         [HttpGet("{email}")]
         public async Task<IActionResult> GetConversations(string email)
         {
+            if (!IsOwnerOrAdmin(email)) return Forbid();
+
             var conversations = await _context.Conversations
                 .Include(c => c.Messages)
                 .Where(c => c.UserEmail == email)
@@ -91,6 +102,7 @@ namespace Messages.API.Controllers
         {
             var conversation = await _context.Conversations.FindAsync(conversationId);
             if (conversation == null) return NotFound();
+            if (!IsOwner(conversation.UserEmail)) return Forbid();
 
             var message = new Message
             {
@@ -109,6 +121,8 @@ namespace Messages.API.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateConversation([FromBody] CreateConversationRequest request)
         {
+            if (!IsOwnerOrAdmin(request.UserEmail)) return Forbid();
+
             var avatar = string.IsNullOrEmpty(request.SellerAvatar)
                 ? request.SellerName[0].ToString().ToUpper()
                 : request.SellerAvatar;
@@ -140,6 +154,7 @@ namespace Messages.API.Controllers
         }
 
         [HttpPost("{conversationId}/reply")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> SellerReply(int conversationId, [FromBody] SendMessageRequest request)
         {
             var conversation = await _context.Conversations.FindAsync(conversationId);

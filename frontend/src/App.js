@@ -973,6 +973,7 @@ function AdminPage({ gateway }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [toast, setToast] = useState('');
   const [auth, setAuth] = useState(false);
+  const [adminToken, setAdminToken] = useState('');
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [authError, setAuthError] = useState('');
@@ -985,13 +986,23 @@ function AdminPage({ gateway }) {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
+  // Admin istekleri token ile gider; token gecersiz/suresi dolmussa giris ekranina doner
+  const adminFetch = async (url, options = {}) => {
+    const res = await fetch(url, {
+      ...options,
+      headers: { ...options.headers, 'Authorization': `Bearer ${adminToken}` }
+    });
+    if (res.status === 401) { setAdminToken(''); setAuth(false); }
+    return res;
+  };
+
   const loadProducts = () => fetch(`${gateway}/api/Products`).then(r => r.json()).then(setProducts).catch(() => {});
-  const loadOrders = () => fetch(`${gateway}/api/Ordering/orders`).then(r => r.json()).then(setOrders).catch(() => {});
-  const loadCustomers = () => fetch(`${gateway}/api/Auth/users`).then(r => r.json()).then(setCustomers).catch(() => {});
-  const loadMessages = () => fetch(`${gateway}/api/Messages`).then(r => r.json()).then(setAdminMessages).catch(() => {});
+  const loadOrders = () => adminFetch(`${gateway}/api/Ordering/orders`).then(r => r.json()).then(setOrders).catch(() => {});
+  const loadCustomers = () => adminFetch(`${gateway}/api/Auth/users`).then(r => r.json()).then(setCustomers).catch(() => {});
+  const loadMessages = () => adminFetch(`${gateway}/api/Messages`).then(r => r.json()).then(setAdminMessages).catch(() => {});
   const sendAdminReply = async () => {
     if (!adminReply.trim() || !adminActiveConvId) return;
-    await fetch(`${gateway}/api/Messages/${adminActiveConvId}/reply`, {
+    await adminFetch(`${gateway}/api/Messages/${adminActiveConvId}/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: adminReply.trim() })
@@ -1014,6 +1025,8 @@ function AdminPage({ gateway }) {
         body: JSON.stringify({ username: adminUser, password: adminPass })
       });
       if (res.ok) {
+        const data = await res.json();
+        setAdminToken(data.token);
         setAuth(true);
       } else {
         setAuthError('Geçersiz kullanıcı adı veya şifre');
@@ -1041,7 +1054,7 @@ function AdminPage({ gateway }) {
 
   const addProduct = async () => {
     if (!form.name || !form.price) return showToast('Ad ve fiyat zorunlu');
-    await fetch(`${gateway}/api/Products`, {
+    await adminFetch(`${gateway}/api/Products`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form, price: parseFloat(form.price) })
     });
@@ -1051,7 +1064,7 @@ function AdminPage({ gateway }) {
   };
 
   const saveEditProduct = async () => {
-    await fetch(`${gateway}/api/Products`, {
+    await adminFetch(`${gateway}/api/Products`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...editingProduct, price: parseFloat(editingProduct.price) })
     });
@@ -1062,13 +1075,13 @@ function AdminPage({ gateway }) {
 
   const deleteProduct = async (id) => {
     if (!window.confirm('Ürünü silmek istediğinize emin misiniz?')) return;
-    await fetch(`${gateway}/api/Products/${id}`, { method: 'DELETE' });
+    await adminFetch(`${gateway}/api/Products/${id}`, { method: 'DELETE' });
     setProducts(prev => prev.filter(p => p.id !== id));
     showToast('Ürün silindi');
   };
 
   const updateOrderStatus = async (id, status) => {
-    await fetch(`${gateway}/api/Ordering/orders/${id}/status`, {
+    await adminFetch(`${gateway}/api/Ordering/orders/${id}/status`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(status)
     });

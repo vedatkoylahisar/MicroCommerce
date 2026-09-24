@@ -134,11 +134,16 @@ services:
       - ASPNETCORE_URLS=http://+:80
       - ASPNETCORE_ENVIRONMENT=Development
     depends_on:
-      - catalog-api
-      - basket-api
-      - identity-api
-      - ordering-api
-      - messages-api
+      catalog-api:
+        condition: service_healthy
+      basket-api:
+        condition: service_healthy
+      identity-api:
+        condition: service_healthy
+      ordering-api:
+        condition: service_healthy
+      messages-api:
+        condition: service_healthy
 
   # ── Frontend ─────────────────────────────────────────────────
   frontend:
@@ -150,7 +155,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
 
 volumes:
   mongo_data:

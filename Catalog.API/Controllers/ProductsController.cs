@@ -1,5 +1,6 @@
 using Catalog.API.Models;
 using Catalog.API.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Catalog.API.Controllers
@@ -31,6 +32,7 @@ namespace Catalog.API.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateProduct(Product product)
         {
             await _repository.CreateProduct(product);
@@ -38,6 +40,7 @@ namespace Catalog.API.Controllers
         }
 
         [HttpPut]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateProduct(Product product)
         {
             var result = await _repository.UpdateProduct(product);
@@ -46,6 +49,7 @@ namespace Catalog.API.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteProduct(string id)
         {
             var result = await _repository.DeleteProduct(id);

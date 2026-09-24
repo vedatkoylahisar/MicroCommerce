@@ -1,4 +1,5 @@
 using Identity.API.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -78,6 +79,7 @@ namespace Identity.API.Controllers
         }
 
         [HttpGet("users")]
+        [Authorize(Roles = "Admin")]
         public IActionResult GetUsers()
         {
             var users = _userManager.Users.Select(u => new
