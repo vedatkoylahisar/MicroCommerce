@@ -70,7 +70,7 @@ public class GatewayFixture : IAsyncLifetime
         return (email, login!.Token);
     }
 
-    public async Task<string> AdminLoginAsync(string username = "admin", string password = "Admin123!")
+    public async Task<string> AdminLoginAsync(string username = "admin", string password = "NlWpGuNHObsHwqBtvB")
     {
         var res = await Client.PostAsJsonAsync("/api/Auth/admin-login", new { username, password });
         res.EnsureSuccessStatusCode();

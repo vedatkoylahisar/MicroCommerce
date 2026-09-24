@@ -27,7 +27,7 @@ services:
     image: postgres:latest
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_PASSWORD: z6iewFl6GY50I1r8h6A6YFW1
     ports:
       - "5432:5432"
     volumes:
@@ -89,9 +89,9 @@ services:
     environment:
       - ASPNETCORE_URLS=http://+:80
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=IdentityDb;Username=postgres;Password=postgres123
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=IdentityDb;Username=postgres;Password=z6iewFl6GY50I1r8h6A6YFW1
       - Admin__Username=admin
-      - Admin__Password=Admin123!
+      - Admin__Password=NlWpGuNHObsHwqBtvB
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,7 +103,7 @@ services:
     environment:
       - ASPNETCORE_URLS=http://+:80
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=OrderingDb;Username=postgres;Password=postgres123
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=OrderingDb;Username=postgres;Password=z6iewFl6GY50I1r8h6A6YFW1
       - RabbitMQ__Host=rabbitmq://rabbitmq
     depends_on:
       postgres:
@@ -118,7 +118,7 @@ services:
     environment:
       - ASPNETCORE_URLS=http://+:80
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=MessagesDb;Username=postgres;Password=postgres123
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=MessagesDb;Username=postgres;Password=z6iewFl6GY50I1r8h6A6YFW1
     depends_on:
       postgres:
         condition: service_healthy
