@@ -76,10 +76,13 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - CacheSettings__ConnectionString=redis:6379
       - RabbitMQ__Host=rabbitmq://rabbitmq
+      - CatalogApi__BaseUrl=http://catalog-api
     depends_on:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      catalog-api:
         condition: service_healthy
 
   identity-api:

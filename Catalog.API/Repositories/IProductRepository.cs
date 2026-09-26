@@ -9,5 +9,11 @@ namespace Catalog.API.Repositories
         Task CreateProduct(Product product);
         Task<bool> UpdateProduct(Product product);
         Task<bool> DeleteProduct(string id);
+
+        /// <summary>Stogu atomik olarak dusurur. Yetersiz stok/urun yoksa false doner, hicbir sey degismez.</summary>
+        Task<bool> TryDecrementStockAsync(string productId, int quantity);
+
+        /// <summary>Basarisiz bir coklu-urun islemini geri almak (telafi) icin stogu artirir.</summary>
+        Task IncrementStockAsync(string productId, int quantity);
     }
 }

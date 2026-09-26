@@ -4,6 +4,7 @@ using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using EventBus.Messages.Events;
+using System.Net.Http.Json;
 using System.Security.Claims;
 
 namespace Basket.API.Controllers
@@ -15,6 +16,7 @@ namespace Basket.API.Controllers
     {
         private readonly IBasketRepository _repository;
         private readonly IPublishEndpoint _publishEndpoint;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         private string? CurrentEmail => User.FindFirstValue(ClaimTypes.Email);
 
@@ -43,10 +45,11 @@ namespace Basket.API.Controllers
             await _repository.DeleteBasket(userName);
             return Ok();
         }
-        public BasketController(IBasketRepository repository, IPublishEndpoint publishEndpoint)
+        public BasketController(IBasketRepository repository, IPublishEndpoint publishEndpoint, IHttpClientFactory httpClientFactory)
         {
             _repository = repository;
             _publishEndpoint = publishEndpoint;
+            _httpClientFactory = httpClientFactory;
         }
 
         [HttpPost("checkout")]
@@ -57,12 +60,33 @@ namespace Basket.API.Controllers
             var basket = await _repository.GetBasket(checkoutEvent.UserName);
             if (basket == null) return NotFound();
 
+            // Sepeti onaylamadan once Catalog.API'ye stok yeterli mi diye sor. Catalog'a
+            // ulasilamazsa fazla satisi (overselling) riske atmaktansa checkout'u reddediyoruz.
+            var catalogClient = _httpClientFactory.CreateClient("CatalogApi");
+            var stockRequest = basket.Items.Select(i => new { productId = i.ProductId, quantity = i.Quantity });
+            List<StockShortfall>? shortfalls;
+            try
+            {
+                var stockResponse = await catalogClient.PostAsJsonAsync("/api/Products/check-stock", stockRequest);
+                if (!stockResponse.IsSuccessStatusCode)
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, "Stok bilgisi dogrulanamadi, lutfen tekrar deneyin.");
+                shortfalls = await stockResponse.Content.ReadFromJsonAsync<List<StockShortfall>>();
+            }
+            catch (HttpRequestException)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Stok bilgisi dogrulanamadi, lutfen tekrar deneyin.");
+            }
+
+            if (shortfalls is { Count: > 0 })
+                return Conflict(new { message = "Bazi urunlerde yeterli stok yok.", items = shortfalls });
+
             // Siparis e-postasi istemciden degil token'dan alinir
             checkoutEvent.EmailAddress = CurrentEmail!;
 
             checkoutEvent.TotalPrice = basket.TotalPrice;
             checkoutEvent.Items = basket.Items.Select(i => new EventBus.Messages.Events.BasketCheckoutItem
             {
+                ProductId = i.ProductId,
                 ProductName = i.ProductName,
                 Quantity = i.Quantity,
                 Price = i.Price
@@ -73,5 +97,7 @@ namespace Basket.API.Controllers
 
             return Accepted();
         }
+
+        private record StockShortfall(string ProductId, string ProductName, int Requested, int Available);
     }
 }

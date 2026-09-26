@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 const GATEWAY = process.env.REACT_APP_GATEWAY || 'http://localhost:7014';
@@ -216,6 +216,9 @@ function ShopPage({ user, basket, setBasket, setPage }) {
   const addToBasket = async (product) => {
     if (!user) { setPage('login'); return; }
     const existing = basket.items.find(i => i.productId === product.id);
+    const currentQty = existing ? existing.quantity : 0;
+    if (currentQty + 1 > (product.stockQuantity ?? 0)) return; // stokta yok, buton zaten disabled ama guvenlik icin
+
     const newItems = existing
       ? basket.items.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i)
       : [...basket.items, { productId: product.id, productName: product.name, price: product.price, quantity: 1 }];
@@ -240,20 +243,31 @@ function ShopPage({ user, basket, setBasket, setPage }) {
       </div>
       {loading ? <div className="loading">Yükleniyor...</div> : (
         <div className="grid">
-          {filtered.map(p => (
-            <div className="card" key={p.id}>
-              <div className="card-img">📦</div>
-              <div className="card-body">
-                <span className="category-tag">{p.category}</span>
-                <h3>{p.name}</h3>
-                <p>{p.description}</p>
-                <div className="card-footer">
-                  <span className="price">{p.price.toLocaleString('tr-TR')} ₺</span>
-                  <button className="add-btn" onClick={() => addToBasket(p)}>+ Sepete Ekle</button>
+          {filtered.map(p => {
+            const inBasket = basket.items.find(i => i.productId === p.id)?.quantity ?? 0;
+            const outOfStock = (p.stockQuantity ?? 0) - inBasket <= 0;
+            return (
+              <div className="card" key={p.id}>
+                <div className="card-img">
+                  {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="card-img-photo" /> : '📦'}
+                </div>
+                <div className="card-body">
+                  <span className="category-tag">{p.category}</span>
+                  <h3>{p.name}</h3>
+                  <p>{p.description}</p>
+                  {outOfStock
+                    ? <span className="stock-warning">Stokta yok</span>
+                    : p.stockQuantity <= 5 && <span className="stock-warning">Son {p.stockQuantity} adet</span>}
+                  <div className="card-footer">
+                    <span className="price">{p.price.toLocaleString('tr-TR')} ₺</span>
+                    <button className="add-btn" disabled={outOfStock} onClick={() => addToBasket(p)}>
+                      {outOfStock ? 'Stokta yok' : '+ Sepete Ekle'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </main>
@@ -294,12 +308,27 @@ function BasketPage({ user, basket, setBasket, setPage }) {
     updateBasket(basket.items.filter(i => i.productId !== productId));
   };
 
+  const [checkoutError, setCheckoutError] = useState('');
+
   const placeOrder = async () => {
-    await fetch(`${GATEWAY}/api/Basket/checkout`, {
+    setCheckoutError('');
+    const res = await fetch(`${GATEWAY}/api/Basket/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
       body: JSON.stringify({ userName: user.email, firstName: user.firstName || '', lastName: user.lastName || '', emailAddress: user.email })
     });
+
+    if (res.status === 409) {
+      const body = await res.json();
+      const detail = (body.items || []).map(i => `${i.productName} (${i.available} adet kaldı)`).join(', ');
+      setCheckoutError(detail ? `Stok yetersiz: ${detail}` : 'Bazı ürünlerde yeterli stok yok.');
+      return;
+    }
+    if (!res.ok) {
+      setCheckoutError('Sipariş oluşturulamadı, lütfen tekrar deneyin.');
+      return;
+    }
+
     setBasket({ items: [] });
     setStep('success');
   };
@@ -446,6 +475,7 @@ function BasketPage({ user, basket, setBasket, setPage }) {
             <div className="summary-row"><span>Ara Toplam</span><span>{total.toLocaleString('tr-TR')} ₺</span></div>
             <div className="summary-row"><span>Kargo</span><span className="free">Ücretsiz</span></div>
             <div className="summary-total"><span>Toplam</span><span>{total.toLocaleString('tr-TR')} ₺</span></div>
+            {checkoutError && <div className="checkout-error">{checkoutError}</div>}
             <button className="checkout-btn" disabled={selectedCard === null} onClick={placeOrder}>Siparişi Tamamla</button>
             <button className="btn-secondary" onClick={() => setStep('address')}>Geri</button>
           </div>
@@ -964,12 +994,106 @@ function OrdersPage({ user, setPage }) {
   );
 }
 
+/* ─── ADMIN: URUN FORMU (ekleme ve duzenleme icin ortak) ─── */
+function ProductForm({ values, onChange }) {
+  const fileInputRef = useRef(null);
+
+  const handleNumberChange = (field, raw) => {
+    if (raw === '') { onChange({ ...values, [field]: '' }); return; }
+    const num = Number(raw);
+    onChange({ ...values, [field]: Number.isNaN(num) ? 0 : Math.max(0, num) });
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        // Buyuk fotograflarin veritabanini sisirmemesi icin makul bir genislige kucultuyoruz
+        const maxWidth = 500;
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        onChange({ ...values, imageUrl: canvas.toDataURL('image/jpeg', 0.82) });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div className="product-form">
+      <div className="form-row">
+        <div className="form-field">
+          <label>Ürün Adı</label>
+          <input className="admin-input" type="text" placeholder="Örn. Kablosuz Kulaklık"
+            value={values.name || ''} onChange={e => onChange({ ...values, name: e.target.value })} />
+        </div>
+        <div className="form-field">
+          <label>Kategori</label>
+          <input className="admin-input" type="text" placeholder="Örn. Elektronik"
+            value={values.category || ''} onChange={e => onChange({ ...values, category: e.target.value })} />
+        </div>
+      </div>
+
+      <div className="form-field">
+        <label>Açıklama</label>
+        <textarea className="admin-input admin-textarea" placeholder="Ürün hakkında kısa bir açıklama yazın"
+          value={values.description || ''} onChange={e => onChange({ ...values, description: e.target.value })} />
+      </div>
+
+      <div className="form-row">
+        <div className="form-field">
+          <label>Fiyat</label>
+          <div className="input-with-suffix">
+            <input className="admin-input" type="number" min="0" step="0.01" placeholder="0.00"
+              value={values.price} onChange={e => handleNumberChange('price', e.target.value)} />
+            <span className="input-suffix">₺</span>
+          </div>
+        </div>
+        <div className="form-field">
+          <label>Stok Adedi</label>
+          <div className="input-with-suffix">
+            <input className="admin-input" type="number" min="0" step="1" placeholder="0"
+              value={values.stockQuantity} onChange={e => handleNumberChange('stockQuantity', e.target.value)} />
+            <span className="input-suffix">adet</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="form-field">
+        <label>Ürün Görseli</label>
+        <div className="image-upload-box" onClick={() => fileInputRef.current?.click()}>
+          {values.imageUrl ? (
+            <>
+              <img src={values.imageUrl} alt="Ürün görseli" className="image-preview" />
+              <button type="button" className="image-remove-btn"
+                onClick={e => { e.stopPropagation(); onChange({ ...values, imageUrl: '' }); }}>Kaldır</button>
+            </>
+          ) : (
+            <div className="image-upload-placeholder">
+              <span className="image-upload-icon">📷</span>
+              <span>Görsel yüklemek için tıklayın</span>
+            </div>
+          )}
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
+      </div>
+    </div>
+  );
+}
+
 function AdminPage({ gateway }) {
   const [tab, setTab] = useState('dashboard');
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [form, setForm] = useState({ name: '', category: '', description: '', price: '' });
+  const [form, setForm] = useState({ name: '', category: '', description: '', price: '', stockQuantity: '', imageUrl: '' });
   const [editingProduct, setEditingProduct] = useState(null);
   const [toast, setToast] = useState('');
   const [auth, setAuth] = useState(false);
@@ -1056,9 +1180,9 @@ function AdminPage({ gateway }) {
     if (!form.name || !form.price) return showToast('Ad ve fiyat zorunlu');
     await adminFetch(`${gateway}/api/Products`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, price: parseFloat(form.price) })
+      body: JSON.stringify({ ...form, price: Math.max(0, Number(form.price) || 0), stockQuantity: Math.max(0, Math.trunc(Number(form.stockQuantity) || 0)) })
     });
-    setForm({ name: '', category: '', description: '', price: '' });
+    setForm({ name: '', category: '', description: '', price: '', stockQuantity: '', imageUrl: '' });
     showToast('Ürün eklendi');
     loadProducts();
   };
@@ -1066,7 +1190,7 @@ function AdminPage({ gateway }) {
   const saveEditProduct = async () => {
     await adminFetch(`${gateway}/api/Products`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...editingProduct, price: parseFloat(editingProduct.price) })
+      body: JSON.stringify({ ...editingProduct, price: Math.max(0, Number(editingProduct.price) || 0), stockQuantity: Math.max(0, Math.trunc(Number(editingProduct.stockQuantity) || 0)) })
     });
     setEditingProduct(null);
     showToast('Ürün güncellendi');
@@ -1110,18 +1234,12 @@ function AdminPage({ gateway }) {
       {toast && <div className="admin-toast">{toast}</div>}
       {editingProduct && (
         <div className="admin-modal-overlay" onClick={() => setEditingProduct(null)}>
-          <div className="admin-modal" onClick={e => e.stopPropagation()}>
+          <div className="admin-modal admin-modal-wide" onClick={e => e.stopPropagation()}>
             <div className="admin-modal-header">
               <h3>Ürünü Düzenle</h3>
               <button className="modal-close" onClick={() => setEditingProduct(null)}>✕</button>
             </div>
-            {['name', 'category', 'description', 'price'].map(f => (
-              <input key={f} className="admin-input"
-                placeholder={f === 'name' ? 'Ürün Adı' : f === 'category' ? 'Kategori' : f === 'description' ? 'Açıklama' : 'Fiyat (₺)'}
-                value={editingProduct[f] || ''}
-                onChange={e => setEditingProduct({ ...editingProduct, [f]: e.target.value })}
-              />
-            ))}
+            <ProductForm values={editingProduct} onChange={setEditingProduct} />
             <div className="modal-actions">
               <button className="checkout-btn" onClick={saveEditProduct}>Kaydet</button>
               <button className="btn-secondary" onClick={() => setEditingProduct(null)}>İptal</button>
@@ -1200,14 +1318,26 @@ function AdminPage({ gateway }) {
               </div>
               <div className="admin-card-box">
                 <table className="admin-table">
-                  <thead><tr><th>Ürün Adı</th><th>Kategori</th><th>Açıklama</th><th>Fiyat</th><th>İşlem</th></tr></thead>
+                  <thead><tr><th>Ürün</th><th>Kategori</th><th>Açıklama</th><th>Fiyat</th><th>Stok</th><th>İşlem</th></tr></thead>
                   <tbody>
                     {filteredProducts.map(p => (
                       <tr key={p.id}>
-                        <td><strong>{p.name}</strong></td>
+                        <td>
+                          <div className="product-name-cell">
+                            {p.imageUrl
+                              ? <img src={p.imageUrl} alt={p.name} className="product-thumb" />
+                              : <span className="product-thumb-placeholder">📦</span>}
+                            <strong>{p.name}</strong>
+                          </div>
+                        </td>
                         <td><span className="category-tag">{p.category}</span></td>
                         <td className="desc-cell">{p.description}</td>
                         <td><strong>{p.price?.toLocaleString('tr-TR')} ₺</strong></td>
+                        <td>
+                          {p.stockQuantity > 0
+                            ? <span>{p.stockQuantity}</span>
+                            : <span className="stock-warning">Stokta yok</span>}
+                        </td>
                         <td>
                           <div className="table-actions">
                             <button className="tbl-edit-btn" onClick={() => setEditingProduct({ ...p })}>Düzenle</button>
@@ -1223,12 +1353,9 @@ function AdminPage({ gateway }) {
           )}
 
           {tab === 'add' && (
-            <div className="admin-card-box" style={{ maxWidth: 560 }}>
+            <div className="admin-card-box" style={{ maxWidth: 640 }}>
               <h3>Yeni Ürün Ekle</h3>
-              {[['name','Ürün Adı'],['category','Kategori'],['description','Açıklama'],['price','Fiyat (₺)']].map(([f, ph]) => (
-                <input key={f} className="admin-input" placeholder={ph} value={form[f]}
-                  onChange={e => setForm({ ...form, [f]: e.target.value })} />
-              ))}
+              <ProductForm values={form} onChange={setForm} />
               <div className="modal-actions">
                 <button className="checkout-btn" onClick={addProduct}>Ürünü Ekle</button>
                 <button className="btn-secondary" onClick={() => setTab('products')}>İptal</button>

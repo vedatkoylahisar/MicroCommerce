@@ -81,8 +81,19 @@ public class GatewayFixture : IAsyncLifetime
     public static HttpRequestMessage WithAuth(HttpMethod method, string url, string token) =>
         new(method, url) { Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token) } };
 
+    /// <summary>Admin olarak stoklu bir test urunu olusturur, olusan urunu (gercek Id ile) dondurur.</summary>
+    public async Task<TestProduct> CreateProductAsync(string adminToken, int stockQuantity, decimal price = 25.5m, string name = "Test Urun")
+    {
+        var req = WithAuth(HttpMethod.Post, "/api/Products", adminToken);
+        req.Content = JsonContent.Create(new { name, category = "Test", description = "Entegrasyon testi urunu", price, stockQuantity });
+        var res = await Client.SendAsync(req);
+        res.EnsureSuccessStatusCode();
+        return (await res.Content.ReadFromJsonAsync<TestProduct>())!;
+    }
+
     private record LoginResponse(string Token, string Email, string? FirstName);
     private record TokenResponse(string Token);
+    public record TestProduct(string Id, string Name, decimal Price, int StockQuantity);
 }
 
 [CollectionDefinition("Gateway")]

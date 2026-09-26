@@ -77,6 +77,9 @@ body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; color: #1e293b;
 .price { font-size: 18px; font-weight: 800; color: #0f172a; }
 .add-btn { background: #3b82f6; color: white; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s; }
 .add-btn:hover { background: #2563eb; }
+.add-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+.stock-warning { font-size: 12px; font-weight: 600; color: #ef4444; }
+.checkout-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin: 8px 0; }
 
 /* BASKET */
 .basket-page { max-width: 1000px; margin: 32px auto; padding: 0 24px; }
@@ -637,8 +640,33 @@ body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; color: #1e293b;
 .dist-bar-wrap { flex: 1; background: #f1f5f9; border-radius: 99px; height: 8px; overflow: hidden; }
 .dist-bar { height: 100%; border-radius: 99px; transition: width .4s; }
 .dist-count { width: 24px; text-align: right; font-size: 13px; font-weight: 700; color: #0f172a; }
-.admin-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
-.admin-modal { background: white; border-radius: 20px; padding: 28px; width: 100%; max-width: 480px; }
+.admin-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.admin-modal { background: white; border-radius: 20px; padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.admin-modal-wide { max-width: 640px; }
+
+/* URUN FORMU */
+.product-form { display: flex; flex-direction: column; gap: 4px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-field { display: flex; flex-direction: column; margin-bottom: 4px; }
+.form-field label { font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; }
+.admin-textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+.input-with-suffix { position: relative; }
+.input-with-suffix .admin-input { padding-right: 48px; }
+.input-suffix { position: absolute; right: 14px; top: 11px; color: #94a3b8; font-size: 13px; font-weight: 600; pointer-events: none; }
+.image-upload-box { border: 2px dashed #e2e8f0; border-radius: 12px; padding: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative; min-height: 120px; background: #f8fafc; transition: border-color .2s; margin-bottom: 12px; }
+.image-upload-box:hover { border-color: #6366f1; }
+.image-upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #94a3b8; font-size: 13px; }
+.image-upload-icon { font-size: 28px; }
+.image-preview { max-width: 100%; max-height: 160px; border-radius: 8px; object-fit: contain; }
+.image-remove-btn { position: absolute; top: 8px; right: 8px; background: rgba(15,23,42,.75); color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.card-img-photo { width: 100%; height: 100%; object-fit: cover; }
+.product-name-cell { display: flex; align-items: center; gap: 10px; }
+.product-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #f1f5f9; flex-shrink: 0; }
+.product-thumb-placeholder { width: 40px; height: 40px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .form-row { grid-template-columns: 1fr; gap: 0; }
+}
 .admin-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .admin-modal-header h3 { font-size: 18px; font-weight: 700; }
 .modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #64748b; }

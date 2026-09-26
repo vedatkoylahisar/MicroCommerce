@@ -29,6 +29,12 @@ builder.Services.AddMassTransit(x =>
 
 builder.Services.AddScoped<IBasketRepository, BasketRepository>();
 
+// Checkout oncesi stok kontrolu icin Catalog.API'ye servisler-arasi cagri
+builder.Services.AddHttpClient("CatalogApi", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["CatalogApi:BaseUrl"] ?? "http://localhost:5130");
+});
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
