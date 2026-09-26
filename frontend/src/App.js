@@ -1,12 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
 
 const GATEWAY = process.env.REACT_APP_GATEWAY || 'http://localhost:7014';
+
+/* ─── YARDIMCI FONKSIYONLAR ─── */
+function slugify(text) {
+  return (text || '')
+    .toString()
+    .toLowerCase()
+    .replaceAll('ı', 'i').replaceAll('ğ', 'g').replaceAll('ü', 'u')
+    .replaceAll('ş', 's').replaceAll('ö', 'o').replaceAll('ç', 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+const WISHLIST_KEY = 'wishlist';
+function getWishlist() {
+  try { return JSON.parse(localStorage.getItem(WISHLIST_KEY) || '[]'); } catch { return []; }
+}
+function toggleWishlist(productId) {
+  const list = getWishlist();
+  const idx = list.indexOf(productId);
+  if (idx >= 0) list.splice(idx, 1); else list.push(productId);
+  try { localStorage.setItem(WISHLIST_KEY, JSON.stringify(list)); } catch { /* localStorage kapali olabilir, sessizce yut */ }
+  return idx < 0;
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('home');
   const [basket, setBasket] = useState({ items: [] });
+  const [shopCategory, setShopCategory] = useState('Tümü');
+
+  const goToShop = (category = 'Tümü') => { setShopCategory(category); setPage('shop'); };
 
   useEffect(() => {
     const saved = localStorage.getItem('user');
@@ -20,20 +47,251 @@ export default function App() {
     setPage('home');
   };
 
-  if (window.location.pathname === '/admin') return <AdminPage gateway={GATEWAY} />;
+  const shared = { user, setUser, page, setPage, basket, setBasket, logout };
 
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/admin" element={<AdminPage gateway={GATEWAY} />} />
+        <Route path="/urun/:id/:slug?" element={<ProductDetailPage {...shared} />} />
+        <Route path="/*" element={
+          <MainAppShell {...shared} shopCategory={shopCategory} goToShop={goToShop} />
+        } />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function MainAppShell({ user, setUser, page, setPage, basket, setBasket, logout, shopCategory, goToShop }) {
   return (
     <div className="app">
       <Header user={user} page={page} setPage={setPage} itemCount={basket.items.length} logout={logout} />
 
-      {page === 'home' && <HomePage setPage={setPage} />}
+      {page === 'home' && <HomePage user={user} basket={basket} setBasket={setBasket} setPage={setPage} goToShop={goToShop} />}
       {page === 'login' && <LoginPage setUser={setUser} setPage={setPage} />}
       {page === 'register' && <RegisterPage setPage={setPage} />}
-      {page === 'shop' && <ShopPage user={user} basket={basket} setBasket={setBasket} setPage={setPage} />}
+      {page === 'shop' && <ShopPage user={user} basket={basket} setBasket={setBasket} setPage={setPage} initialCategory={shopCategory} />}
       {page === 'basket' && <BasketPage user={user} basket={basket} setBasket={setBasket} setPage={setPage} />}
       {page === 'profile' && <ProfilePage user={user} setUser={setUser} setPage={setPage} />}
       {page === 'orders' && <OrdersPage user={user} setPage={setPage} />}
       {page === 'messages' && <MessagesPage user={user} setPage={setPage} />}
+    </div>
+  );
+}
+
+/* ─── URUN DETAY SAYFASI ─── */
+function ProductDetailPage({ user, page, setPage, basket, setBasket, logout }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeImage, setActiveImage] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+  const [activeTab, setActiveTab] = useState('description');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [addedMsg, setAddedMsg] = useState('');
+
+  // Header ana uygulamanin ic 'page' state'ini kullaniyor; bu sayfadan tiklandiginda
+  // hem o state'i guncelleyip hem gercekten "/" adresine donmemiz gerekiyor.
+  const goHere = (p) => { setPage(p); navigate('/'); };
+  const handleLogout = () => { logout(); navigate('/'); };
+
+  const loadProduct = () => {
+    setLoading(true);
+    fetch(`${GATEWAY}/api/Products/${id}`)
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(data => { setProduct(data); setActiveImage(0); setLoading(false); })
+      .catch(() => { setProduct(null); setLoading(false); });
+  };
+
+  useEffect(() => { loadProduct(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+
+  if (loading || !product) {
+    return (
+      <div className="app">
+        <Header user={user} page={page} setPage={goHere} itemCount={basket.items.length} logout={handleLogout} />
+        {loading ? <div className="loading">Yükleniyor...</div> : (
+          <div className="empty-state">
+            <span className="empty-icon">😕</span>
+            <p>Ürün bulunamadı.</p>
+            <button className="hero-btn" onClick={() => goHere('shop')}>Mağazaya Dön</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const images = product.images || [];
+  const reviews = product.reviews || [];
+  const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+  const inBasket = basket.items.find(i => i.productId === product.id)?.quantity ?? 0;
+  const availableToAdd = Math.max(0, (product.stockQuantity ?? 0) - inBasket);
+  const outOfStock = availableToAdd <= 0;
+
+  const addToBasket = async () => {
+    if (!user) { goHere('login'); return; }
+    const existing = basket.items.find(i => i.productId === product.id);
+    const newItems = existing
+      ? basket.items.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + quantity } : i)
+      : [...basket.items, { productId: product.id, productName: product.name, price: product.price, quantity }];
+    const res = await fetch(`${GATEWAY}/api/Basket`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
+      body: JSON.stringify({ userName: user.email, items: newItems })
+    });
+    setBasket(await res.json());
+    setQuantity(1);
+    setAddedMsg('Sepete eklendi ✓');
+    setTimeout(() => setAddedMsg(''), 2000);
+  };
+
+  const submitReview = async () => {
+    setReviewError('');
+    if (!user) { goHere('login'); return; }
+    const res = await fetch(`${GATEWAY}/api/Products/${product.id}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
+      body: JSON.stringify({ rating: reviewRating, comment: reviewComment })
+    });
+    if (!res.ok) { setReviewError('Yorum gönderilemedi, tekrar dener misin?'); return; }
+    setReviewComment('');
+    setReviewRating(5);
+    loadProduct();
+  };
+
+  return (
+    <div className="app">
+      <Header user={user} page={page} setPage={goHere} itemCount={basket.items.length} logout={handleLogout} />
+      <main className="pdp">
+        <div className="breadcrumb">
+          <span onClick={() => goHere('home')}>Ana Sayfa</span>
+          <span className="breadcrumb-sep">/</span>
+          <span onClick={() => goHere('shop')}>{product.category}</span>
+          <span className="breadcrumb-sep">/</span>
+          <span className="breadcrumb-current">{product.name}</span>
+        </div>
+
+        <div className="pdp-layout">
+          <div className="pdp-gallery">
+            {images.length > 0 && (
+              <div className="pdp-thumbs">
+                {images.map((img, i) => (
+                  <button key={i} className={`pdp-thumb ${activeImage === i ? 'active' : ''}`} onClick={() => setActiveImage(i)}>
+                    <img src={img} alt={`${product.name} ${i + 1}`} />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="pdp-main-image">
+              {images.length > 1 && (
+                <button className="pdp-arrow pdp-arrow-left" onClick={() => setActiveImage((activeImage - 1 + images.length) % images.length)}>‹</button>
+              )}
+              {images.length > 0 ? <img src={images[activeImage]} alt={product.name} /> : <span className="pdp-placeholder">📦</span>}
+              {images.length > 1 && (
+                <button className="pdp-arrow pdp-arrow-right" onClick={() => setActiveImage((activeImage + 1) % images.length)}>›</button>
+              )}
+            </div>
+          </div>
+
+          <div className="pdp-info">
+            <h1 className="pdp-title">{product.name}</h1>
+            <div className="pdp-rating-row">
+              <span className="pdp-stars">{'★'.repeat(Math.round(avgRating))}{'☆'.repeat(5 - Math.round(avgRating))}</span>
+              <span className="pdp-rating-count">({reviews.length} Yorum)</span>
+              <button className="section-link" onClick={() => setActiveTab('reviews')}>Yorum Yap</button>
+            </div>
+
+            <div className="pdp-meta-row">
+              <span>Ürün Kodu: <strong>{product.id.slice(-8).toUpperCase()}</strong></span>
+              <span>Kategori: <strong>{product.category}</strong></span>
+              {outOfStock
+                ? <span className="pdp-stock out">● Stokta Yok</span>
+                : <span className="pdp-stock in">● Stokta Var ({product.stockQuantity} adet)</span>}
+            </div>
+
+            <div className="pdp-price-box">
+              <span className="pdp-price-label">Ürün Fiyatı</span>
+              <span className="pdp-price">{product.price.toLocaleString('tr-TR')} ₺</span>
+              <span className="pdp-installment-hint">6 ay'a varan taksit imkanı — {(product.price / 6).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺'den başlayan taksitlerle</span>
+            </div>
+
+            <div className="pdp-buy-row">
+              <div className="qty-stepper">
+                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} disabled={quantity <= 1}>−</button>
+                <span>{quantity}</span>
+                <button onClick={() => setQuantity(q => Math.min(availableToAdd, q + 1))} disabled={outOfStock || quantity >= availableToAdd}>+</button>
+              </div>
+              <button className="pdp-add-btn" disabled={outOfStock} onClick={addToBasket}>
+                {outOfStock ? 'Stokta Yok' : 'Sepete Ekle'}
+              </button>
+            </div>
+            {addedMsg && <div className="pdp-added-msg">{addedMsg}</div>}
+          </div>
+        </div>
+
+        <div className="pdp-tabs">
+          <div className="pdp-tab-headers">
+            <button className={activeTab === 'description' ? 'active' : ''} onClick={() => setActiveTab('description')}>Ürün Açıklaması</button>
+            <button className={activeTab === 'shipping' ? 'active' : ''} onClick={() => setActiveTab('shipping')}>Garanti ve Teslimat</button>
+            <button className={activeTab === 'installment' ? 'active' : ''} onClick={() => setActiveTab('installment')}>Taksit Seçenekleri</button>
+            <button className={activeTab === 'reviews' ? 'active' : ''} onClick={() => setActiveTab('reviews')}>Yorumlar ({reviews.length})</button>
+          </div>
+          <div className="pdp-tab-content">
+            {activeTab === 'description' && <p>{product.description || 'Bu ürün için henüz açıklama eklenmemiş.'}</p>}
+
+            {activeTab === 'shipping' && (
+              <div>
+                <p>Siparişiniz onaylandıktan sonra 1-3 iş günü içinde kargoya teslim edilir.</p>
+                <p>Ürün üretici garantisi kapsamındadır. Hasarlı veya ayıplı ürünler teslimattan itibaren 14 gün içinde iade edilebilir.</p>
+              </div>
+            )}
+
+            {activeTab === 'installment' && (
+              <div>
+                <p>Kredi kartınızla 6 aya varan taksit imkânından faydalanabilirsiniz.</p>
+                <p>Aylık taksit tutarı <strong>{(product.price / 6).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺</strong>'den başlıyor.</p>
+              </div>
+            )}
+
+            {activeTab === 'reviews' && (
+              <div className="pdp-reviews">
+                {reviews.length === 0 && <p className="pdp-no-reviews">Henüz yorum yapılmamış. İlk yorumu sen yaz!</p>}
+                {reviews.slice().reverse().map(r => (
+                  <div className="pdp-review" key={r.id}>
+                    <div className="pdp-review-head">
+                      <span className="pdp-review-stars">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+                      <strong>{r.userName}</strong>
+                      <span className="pdp-review-date">{new Date(r.createdAt).toLocaleDateString('tr-TR')}</span>
+                    </div>
+                    {r.comment && <p>{r.comment}</p>}
+                  </div>
+                ))}
+
+                <div className="pdp-review-form">
+                  <h4>Yorum Yap</h4>
+                  {!user ? (
+                    <p className="pdp-review-login-hint">Yorum yapmak için <span onClick={() => goHere('login')}>giriş yapmalısın</span>.</p>
+                  ) : (
+                    <>
+                      <div className="star-picker">
+                        {[1, 2, 3, 4, 5].map(n => (
+                          <span key={n} className={n <= reviewRating ? 'star filled' : 'star'} onClick={() => setReviewRating(n)}>★</span>
+                        ))}
+                      </div>
+                      <textarea className="admin-input admin-textarea" placeholder="Ürün hakkındaki düşüncelerini yaz..."
+                        value={reviewComment} onChange={e => setReviewComment(e.target.value)} />
+                      {reviewError && <div className="checkout-error">{reviewError}</div>}
+                      <button className="checkout-btn" onClick={submitReview}>Yorumu Gönder</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
@@ -104,14 +362,104 @@ function Header({ user, page, setPage, itemCount, logout }) {
   );
 }
 
-function HomePage({ setPage }) {
+/* ─── ORTAK URUN KARTI (Ana sayfa ve Magaza'da kullanilir) ─── */
+function ProductCard({ product, basket, onAdd }) {
+  const navigate = useNavigate();
+  const [wishlisted, setWishlisted] = useState(() => getWishlist().includes(product.id));
+  const inBasket = basket.items.find(i => i.productId === product.id)?.quantity ?? 0;
+  const outOfStock = (product.stockQuantity ?? 0) - inBasket <= 0;
+  const detailUrl = `/urun/${product.id}/${slugify(product.name)}`;
+
+  const handleWishlist = (e) => {
+    e.stopPropagation();
+    setWishlisted(toggleWishlist(product.id));
+  };
+
+  return (
+    <div className="card" onClick={() => navigate(detailUrl)}>
+      <div className="card-img">
+        {product.images?.[0] ? <img src={product.images[0]} alt={product.name} className="card-img-photo" /> : '📦'}
+        <div className="card-hover-icons">
+          <button className="icon-btn" title="Ürünü Gör" onClick={e => { e.stopPropagation(); navigate(detailUrl); }}>👁</button>
+          <button className={`icon-btn ${wishlisted ? 'active' : ''}`} title="Favorilere Ekle" onClick={handleWishlist}>
+            {wishlisted ? '❤️' : '🤍'}
+          </button>
+        </div>
+      </div>
+      <div className="card-body">
+        <span className="category-tag">{product.category}</span>
+        <h3>{product.name}</h3>
+        <p>{product.description}</p>
+        {outOfStock
+          ? <span className="stock-warning">Stokta yok</span>
+          : product.stockQuantity <= 5 && <span className="stock-warning">Son {product.stockQuantity} adet</span>}
+        <div className="card-footer">
+          <span className="price">{product.price.toLocaleString('tr-TR')} ₺</span>
+          <button className="add-btn" disabled={outOfStock} onClick={e => { e.stopPropagation(); onAdd(product); }}>
+            {outOfStock ? 'Stokta yok' : '+ Sepete Ekle'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomePage({ user, basket, setBasket, setPage, goToShop }) {
+  const [products, setProducts] = useState([]);
+  const carouselRef = useRef(null);
+
+  useEffect(() => {
+    fetch(`${GATEWAY}/api/Products`).then(r => r.json()).then(setProducts).catch(() => {});
+  }, []);
+
+  const addToBasket = async (product) => {
+    if (!user) { setPage('login'); return; }
+    const existing = basket.items.find(i => i.productId === product.id);
+    if ((existing?.quantity ?? 0) + 1 > (product.stockQuantity ?? 0)) return;
+    const newItems = existing
+      ? basket.items.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i)
+      : [...basket.items, { productId: product.id, productName: product.name, price: product.price, quantity: 1 }];
+    const res = await fetch(`${GATEWAY}/api/Basket`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.token}` },
+      body: JSON.stringify({ userName: user.email, items: newItems })
+    });
+    setBasket(await res.json());
+  };
+
+  const scrollCarousel = (dir) => {
+    carouselRef.current?.scrollBy({ left: dir * 320, behavior: 'smooth' });
+  };
+
   return (
     <div>
-      <div className="hero">
-        <h2>En İyi Fırsatlar</h2>
-        <p>Binlerce ürün, en uygun fiyatlarla</p>
-        <button className="hero-btn" onClick={() => setPage('shop')}>Alışverişe Başla</button>
+      <div className="promo-ticker">
+        <div className="promo-ticker-track">
+          {Array(6).fill('✦ 5000 TL ve üzeri ücretsiz kargo').map((t, i) => <span key={i}>{t}</span>)}
+        </div>
       </div>
+
+      {products.length > 0 && (
+        <section className="home-section home-section-first">
+          <div className="section-header">
+            <h3 className="section-title">Öne Çıkan Ürünler</h3>
+            <button className="section-link" onClick={() => goToShop()}>Tümünü Gör →</button>
+          </div>
+
+          <div className="carousel-wrap">
+            <button className="carousel-arrow carousel-arrow-left" onClick={() => scrollCarousel(-1)} aria-label="Geri">‹</button>
+            <div className="carousel-track" ref={carouselRef}>
+              {products.map(p => (
+                <div className="carousel-item" key={p.id}>
+                  <ProductCard product={p} basket={basket} onAdd={addToBasket} />
+                </div>
+              ))}
+            </div>
+            <button className="carousel-arrow carousel-arrow-right" onClick={() => scrollCarousel(1)} aria-label="İleri">›</button>
+          </div>
+        </section>
+      )}
+
       <div className="features">
         <div className="feature-card">🚀<h3>Hızlı Teslimat</h3><p>Aynı gün kargo</p></div>
         <div className="feature-card">🔒<h3>Güvenli Ödeme</h3><p>256-bit SSL şifreleme</p></div>
@@ -162,6 +510,28 @@ function LoginPage({ setUser, setPage }) {
   );
 }
 
+// Identity'nin ingilizce hata kodlarini kullaniciya anlamli Turkce mesaja cevirir
+const IDENTITY_ERROR_MESSAGES = {
+  PasswordTooShort: 'Şifre en az 6 karakter olmalı.',
+  PasswordRequiresNonAlphanumeric: 'Şifre en az bir özel karakter içermeli (örn. ! ? # gibi).',
+  PasswordRequiresLower: 'Şifre en az bir küçük harf içermeli.',
+  PasswordRequiresUpper: 'Şifre en az bir büyük harf içermeli.',
+  PasswordRequiresDigit: 'Şifre en az bir rakam içermeli.',
+  DuplicateUserName: 'Bu e-posta adresiyle zaten bir hesap var.',
+  DuplicateEmail: 'Bu e-posta adresiyle zaten bir hesap var.',
+  InvalidEmail: 'Geçerli bir e-posta adresi gir.',
+};
+
+async function describeRegisterError(res) {
+  try {
+    const errors = await res.json();
+    if (Array.isArray(errors) && errors.length > 0) {
+      return errors.map(e => IDENTITY_ERROR_MESSAGES[e.code] || e.description).join(' ');
+    }
+  } catch { /* JSON degilse asagidaki genel mesaja dusulur */ }
+  return 'Kayıt başarısız, bilgileri kontrol edin.';
+}
+
 function RegisterPage({ setPage }) {
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
   const [error, setError] = useState('');
@@ -176,7 +546,7 @@ function RegisterPage({ setPage }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
       });
-      if (!res.ok) { setError('Kayıt başarısız, bilgileri kontrol edin'); return; }
+      if (!res.ok) { setError(await describeRegisterError(res)); return; }
       setPage('login');
     } catch {
       setError('Bağlantı hatası');
@@ -194,6 +564,7 @@ function RegisterPage({ setPage }) {
         <input className="auth-input" placeholder="Soyad" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} />
         <input className="auth-input" placeholder="E-posta" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
         <input className="auth-input" type="password" placeholder="Şifre" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+        <span className="input-hint">En az 6 karakter, bir büyük harf, bir küçük harf ve bir özel karakter içermeli.</span>
         <button className="auth-btn" onClick={register} disabled={loading}>{loading ? 'Kayıt yapılıyor...' : 'Kayıt Ol'}</button>
         <p className="auth-link">Hesabın var mı? <span onClick={() => setPage('login')}>Giriş Yap</span></p>
       </div>
@@ -201,9 +572,10 @@ function RegisterPage({ setPage }) {
   );
 }
 
-function ShopPage({ user, basket, setBasket, setPage }) {
+function ShopPage({ user, basket, setBasket, setPage, initialCategory }) {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState(initialCategory || 'Tümü');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -231,9 +603,10 @@ function ShopPage({ user, basket, setBasket, setPage }) {
     setBasket(await res.json());
   };
 
+  const categories = ['Tümü', ...new Set(products.map(p => p.category).filter(Boolean))];
   const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.category.toLowerCase().includes(search.toLowerCase())
+    (category === 'Tümü' || p.category === category) &&
+    (p.name.toLowerCase().includes(search.toLowerCase()) || p.category.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
@@ -241,33 +614,23 @@ function ShopPage({ user, basket, setBasket, setPage }) {
       <div className="shop-header">
         <input className="search" placeholder="🔍  Ürün ara..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-      {loading ? <div className="loading">Yükleniyor...</div> : (
+      <div className="category-row shop-category-row">
+        {categories.map(cat => (
+          <button key={cat} className={`category-chip ${category === cat ? 'active' : ''}`} onClick={() => setCategory(cat)}>
+            {cat}
+          </button>
+        ))}
+      </div>
+      {loading ? (
+        <div className="loading">Yükleniyor...</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">
+          <span className="empty-icon">🔍</span>
+          <p>Aradığın kriterlere uygun ürün bulunamadı.</p>
+        </div>
+      ) : (
         <div className="grid">
-          {filtered.map(p => {
-            const inBasket = basket.items.find(i => i.productId === p.id)?.quantity ?? 0;
-            const outOfStock = (p.stockQuantity ?? 0) - inBasket <= 0;
-            return (
-              <div className="card" key={p.id}>
-                <div className="card-img">
-                  {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="card-img-photo" /> : '📦'}
-                </div>
-                <div className="card-body">
-                  <span className="category-tag">{p.category}</span>
-                  <h3>{p.name}</h3>
-                  <p>{p.description}</p>
-                  {outOfStock
-                    ? <span className="stock-warning">Stokta yok</span>
-                    : p.stockQuantity <= 5 && <span className="stock-warning">Son {p.stockQuantity} adet</span>}
-                  <div className="card-footer">
-                    <span className="price">{p.price.toLocaleString('tr-TR')} ₺</span>
-                    <button className="add-btn" disabled={outOfStock} onClick={() => addToBasket(p)}>
-                      {outOfStock ? 'Stokta yok' : '+ Sepete Ekle'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {filtered.map(p => <ProductCard key={p.id} product={p} basket={basket} onAdd={addToBasket} />)}
         </div>
       )}
     </main>
@@ -1004,9 +1367,7 @@ function ProductForm({ values, onChange }) {
     onChange({ ...values, [field]: Number.isNaN(num) ? 0 : Math.max(0, num) });
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const resizeToDataUrl = (file) => new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new window.Image();
@@ -1018,12 +1379,23 @@ function ProductForm({ values, onChange }) {
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        onChange({ ...values, imageUrl: canvas.toDataURL('image/jpeg', 0.82) });
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
+  });
+
+  const handleImagesChange = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const resized = await Promise.all(files.map(resizeToDataUrl));
+    onChange({ ...values, images: [...(values.images || []), ...resized] });
     e.target.value = '';
+  };
+
+  const removeImage = (idx) => {
+    onChange({ ...values, images: (values.images || []).filter((_, i) => i !== idx) });
   };
 
   return (
@@ -1067,22 +1439,23 @@ function ProductForm({ values, onChange }) {
       </div>
 
       <div className="form-field">
-        <label>Ürün Görseli</label>
-        <div className="image-upload-box" onClick={() => fileInputRef.current?.click()}>
-          {values.imageUrl ? (
-            <>
-              <img src={values.imageUrl} alt="Ürün görseli" className="image-preview" />
-              <button type="button" className="image-remove-btn"
-                onClick={e => { e.stopPropagation(); onChange({ ...values, imageUrl: '' }); }}>Kaldır</button>
-            </>
-          ) : (
+        <label>Ürün Görselleri {(values.images || []).length > 0 && `(${values.images.length})`}</label>
+        <div className="image-gallery-grid">
+          {(values.images || []).map((img, idx) => (
+            <div className="image-gallery-item" key={idx}>
+              <img src={img} alt={`Görsel ${idx + 1}`} />
+              {idx === 0 && <span className="image-primary-badge">Kapak</span>}
+              <button type="button" className="image-remove-btn" onClick={() => removeImage(idx)}>✕</button>
+            </div>
+          ))}
+          <div className="image-upload-box image-upload-box-small" onClick={() => fileInputRef.current?.click()}>
             <div className="image-upload-placeholder">
               <span className="image-upload-icon">📷</span>
-              <span>Görsel yüklemek için tıklayın</span>
+              <span>Görsel Ekle</span>
             </div>
-          )}
+          </div>
         </div>
-        <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
+        <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={handleImagesChange} />
       </div>
     </div>
   );
@@ -1093,7 +1466,7 @@ function AdminPage({ gateway }) {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [form, setForm] = useState({ name: '', category: '', description: '', price: '', stockQuantity: '', imageUrl: '' });
+  const [form, setForm] = useState({ name: '', category: '', description: '', price: '', stockQuantity: '', images: [] });
   const [editingProduct, setEditingProduct] = useState(null);
   const [toast, setToast] = useState('');
   const [auth, setAuth] = useState(false);
@@ -1182,7 +1555,7 @@ function AdminPage({ gateway }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form, price: Math.max(0, Number(form.price) || 0), stockQuantity: Math.max(0, Math.trunc(Number(form.stockQuantity) || 0)) })
     });
-    setForm({ name: '', category: '', description: '', price: '', stockQuantity: '', imageUrl: '' });
+    setForm({ name: '', category: '', description: '', price: '', stockQuantity: '', images: [] });
     showToast('Ürün eklendi');
     loadProducts();
   };
@@ -1324,8 +1697,8 @@ function AdminPage({ gateway }) {
                       <tr key={p.id}>
                         <td>
                           <div className="product-name-cell">
-                            {p.imageUrl
-                              ? <img src={p.imageUrl} alt={p.name} className="product-thumb" />
+                            {p.images?.[0]
+                              ? <img src={p.images[0]} alt={p.name} className="product-thumb" />
                               : <span className="product-thumb-placeholder">📦</span>}
                             <strong>{p.name}</strong>
                           </div>
@@ -1486,79 +1859,48 @@ function AdminPage({ gateway }) {
 }
 
 /* ─── MESSAGES PAGE ─── */
+// Tek magazali bir sistemde karsi taraf hep ayni destek ekibi - kullaniciya "hangi satici"
+// diye sormaya gerek yok, tum konusmalar otomatik olarak buraya aciliyor.
+const STORE_NAME = 'Mağaza Desteği';
+
 function MessagesPage({ user, setPage }) {
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showNewConv, setShowNewConv] = useState(false);
-  const [newConvForm, setNewConvForm] = useState({ sellerName: '', orderId: '', message: '' });
+  const [newConvForm, setNewConvForm] = useState({ orderId: '', message: '' });
+
+  const fetchMessages = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${GATEWAY}/api/Messages/${user.email}`, {
+        headers: { 'Authorization': `Bearer ${user.token}` }
+      });
+      if (!res.ok) throw new Error('failed');
+      setConversations(await res.json());
+      setLoadError(false);
+    } catch {
+      setConversations([]);
+      setLoadError(true);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!user) { setPage('login'); return; }
-    const fetchMessages = async () => {
-      try {
-        const res = await fetch(`${GATEWAY}/api/Messages/${user.email}`, {
-          headers: { 'Authorization': `Bearer ${user.token}` }
-        });
-        if (res.ok) {
-          setConversations(await res.json());
-        } else {
-          setConversations(getDemoConversations());
-        }
-      } catch {
-        setConversations(getDemoConversations());
-      }
-      setLoading(false);
-    };
     fetchMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, setPage]);
 
-  const getDemoConversations = () => [
-    {
-      id: 1, sellerName: 'TechStore', sellerAvatar: 'T', orderId: 'ORD-2026-001',
-      lastMessage: 'Siparişiniz kargoya verildi, iyi günler!', lastTime: '2026-03-28T14:30:00', unread: 1,
-      messages: [
-        { id: 1, from: 'user', text: 'Merhaba, siparişim ne zaman kargoya verilecek?', time: '2026-03-28T10:15:00' },
-        { id: 2, from: 'seller', text: 'Merhaba! Siparişiniz bugün hazırlanıyor, öğleden sonra kargoya teslim edilecek.', time: '2026-03-28T11:20:00' },
-        { id: 3, from: 'user', text: 'Teşekkürler, kargo takip numarasını paylaşabilir misiniz?', time: '2026-03-28T13:00:00' },
-        { id: 4, from: 'seller', text: 'Siparişiniz kargoya verildi, iyi günler!', time: '2026-03-28T14:30:00' },
-      ]
-    },
-    {
-      id: 2, sellerName: 'GadgetWorld', sellerAvatar: 'G', orderId: 'ORD-2026-002',
-      lastMessage: 'Rica ederim, iyi günler dilerim!', lastTime: '2026-03-26T09:45:00', unread: 0,
-      messages: [
-        { id: 1, from: 'user', text: 'Ürün hasarlı geldi, iade etmek istiyorum.', time: '2026-03-25T16:00:00' },
-        { id: 2, from: 'seller', text: 'Çok özür dileriz. Hemen iade sürecini başlatıyoruz.', time: '2026-03-25T17:30:00' },
-        { id: 3, from: 'user', text: 'Anladım, teşekkür ederim.', time: '2026-03-26T09:00:00' },
-        { id: 4, from: 'seller', text: 'Rica ederim, iyi günler dilerim!', time: '2026-03-26T09:45:00' },
-      ]
-    },
-    {
-      id: 3, sellerName: 'ElektroMarket', sellerAvatar: 'E', orderId: 'ORD-2026-003',
-      lastMessage: 'Ürününüz hazırlanıyor, tahmini 2 gün içinde kargoya verilecek.', lastTime: '2026-03-27T11:00:00', unread: 2,
-      messages: [
-        { id: 1, from: 'user', text: 'Sipariş durumum hakkında bilgi alabilir miyim?', time: '2026-03-27T09:00:00' },
-        { id: 2, from: 'seller', text: 'Ürününüz hazırlanıyor, tahmini 2 gün içinde kargoya verilecek.', time: '2026-03-27T11:00:00' },
-      ]
-    }
-  ];
-
-  const reloadConversations = async () => {
-    try {
-      const r = await fetch(`${GATEWAY}/api/Messages/${user.email}`, { headers: { 'Authorization': `Bearer ${user.token}` } });
-      if (r.ok) setConversations(await r.json());
-    } catch (_) {}
-  };
-
   const createConversation = async () => {
-    if (!newConvForm.sellerName.trim() || !newConvForm.message.trim()) return;
+    if (!newConvForm.message.trim()) return;
     try {
       const res = await fetch(`${GATEWAY}/api/Messages`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${user.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userEmail: user.email, sellerName: newConvForm.sellerName.trim(), sellerAvatar: null, orderId: newConvForm.orderId.trim() || 'Genel', initialMessage: null })
+        body: JSON.stringify({ userEmail: user.email, sellerName: STORE_NAME, sellerAvatar: null, orderId: newConvForm.orderId.trim() || 'Genel', initialMessage: null })
       });
       if (res.ok) {
         const data = await res.json();
@@ -1567,9 +1909,9 @@ function MessagesPage({ user, setPage }) {
           headers: { 'Authorization': `Bearer ${user.token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: newConvForm.message.trim() })
         });
-        setNewConvForm({ sellerName: '', orderId: '', message: '' });
+        setNewConvForm({ orderId: '', message: '' });
         setShowNewConv(false);
-        await reloadConversations();
+        await fetchMessages();
       }
     } catch (_) {}
   };
@@ -1617,8 +1959,7 @@ function MessagesPage({ user, setPage }) {
               <h3>Yeni Mesaj</h3>
               <button className="modal-close" onClick={() => setShowNewConv(false)}>✕</button>
             </div>
-            <input className="admin-input" placeholder="Satıcı / Mağaza adı" value={newConvForm.sellerName}
-              onChange={e => setNewConvForm({ ...newConvForm, sellerName: e.target.value })} />
+            <p className="new-conv-hint">Mesajın <strong>{STORE_NAME}</strong>'e gönderilecek.</p>
             <input className="admin-input" placeholder="Sipariş ID (opsiyonel)" value={newConvForm.orderId}
               onChange={e => setNewConvForm({ ...newConvForm, orderId: e.target.value })} />
             <input className="admin-input" placeholder="Mesajınız" value={newConvForm.message}
@@ -1635,12 +1976,18 @@ function MessagesPage({ user, setPage }) {
         <div className="messages-layout">
           <div className="conv-list">
             <button className="admin-add-btn" style={{ margin: '12px', width: 'calc(100% - 24px)' }} onClick={() => setShowNewConv(true)}>+ Yeni Mesaj</button>
-            {conversations.length === 0 ? (
+            {loadError ? (
+              <div className="empty-state" style={{ padding: '40px 20px' }}>
+                <span className="empty-icon">⚠️</span>
+                <p>Mesajlar yüklenemedi.</p>
+                <button className="btn-secondary" onClick={fetchMessages}>Tekrar Dene</button>
+              </div>
+            ) : conversations.length === 0 ? (
               <div className="empty-state" style={{ padding: '40px 20px' }}><span className="empty-icon">💬</span><p>Henüz mesajınız yok</p></div>
             ) : (
               conversations.map(conv => (
                 <div key={conv.id} className={`conv-item ${activeConv?.id === conv.id ? 'active' : ''}`} onClick={() => setActiveConv(conv)}>
-                  <div className="conv-avatar" style={{ background: conv.id === 1 ? '#3b82f6' : conv.id === 2 ? '#8b5cf6' : '#f59e0b' }}>
+                  <div className="conv-avatar">
                     {conv.sellerAvatar}
                   </div>
                   <div className="conv-info">
@@ -1664,7 +2011,7 @@ function MessagesPage({ user, setPage }) {
               <>
                 <div className="chat-header">
                   <div className="chat-header-info">
-                    <div className="conv-avatar sm" style={{ background: activeConv.id === 1 ? '#3b82f6' : activeConv.id === 2 ? '#8b5cf6' : '#f59e0b' }}>
+                    <div className="conv-avatar sm">
                       {activeConv.sellerAvatar}
                     </div>
                     <div>

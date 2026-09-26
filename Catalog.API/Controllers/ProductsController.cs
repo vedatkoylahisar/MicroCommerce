@@ -2,6 +2,7 @@ using Catalog.API.Models;
 using Catalog.API.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Catalog.API.Controllers
 {
@@ -86,8 +87,30 @@ namespace Catalog.API.Controllers
             }
             return Ok(shortfalls);
         }
+
+        /// <summary>Giris yapmis herhangi bir kullanici urune yorum/puan birakabilir.</summary>
+        [HttpPost("{id}/reviews")]
+        [Authorize]
+        public async Task<IActionResult> AddReview(string id, [FromBody] AddReviewRequest request)
+        {
+            if (request.Rating < 1 || request.Rating > 5)
+                return BadRequest("Puan 1 ile 5 arasinda olmalidir.");
+
+            var review = new ProductReview
+            {
+                UserName = User.FindFirstValue(ClaimTypes.Name) ?? "Kullanıcı",
+                UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
+                Rating = request.Rating,
+                Comment = request.Comment ?? string.Empty
+            };
+
+            var ok = await _repository.AddReviewAsync(id, review);
+            if (!ok) return NotFound();
+            return Ok(review);
+        }
     }
 
     public record StockCheckItem(string ProductId, int Quantity);
     public record StockShortfall(string ProductId, string ProductName, int Requested, int Available);
+    public record AddReviewRequest(int Rating, string? Comment);
 }

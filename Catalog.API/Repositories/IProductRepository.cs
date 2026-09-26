@@ -15,5 +15,8 @@ namespace Catalog.API.Repositories
 
         /// <summary>Basarisiz bir coklu-urun islemini geri almak (telafi) icin stogu artirir.</summary>
         Task IncrementStockAsync(string productId, int quantity);
+
+        /// <summary>Yorumu urune atomik olarak ekler ($push). Urun bulunamazsa false doner.</summary>
+        Task<bool> AddReviewAsync(string productId, ProductReview review);
     }
 }

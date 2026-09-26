@@ -58,5 +58,12 @@ namespace Catalog.API.Repositories
             var update = Builders<Product>.Update.Inc(p => p.StockQuantity, quantity);
             await _products.UpdateOneAsync(p => p.Id == productId, update);
         }
+
+        public async Task<bool> AddReviewAsync(string productId, ProductReview review)
+        {
+            var update = Builders<Product>.Update.Push(p => p.Reviews, review);
+            var result = await _products.UpdateOneAsync(p => p.Id == productId, update);
+            return result.MatchedCount > 0;
+        }
     }
 }
