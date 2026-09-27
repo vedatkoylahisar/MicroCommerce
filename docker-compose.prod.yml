@@ -6,6 +6,7 @@ x-common: &common
     ASPNETCORE_URLS: http://+:80
     ASPNETCORE_ENVIRONMENT: Production
     Jwt__Key: ${JWT_KEY}
+    Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
 
 services:
 

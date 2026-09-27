@@ -13,10 +13,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<MessageDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? "http://localhost:3000")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy", policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        policy.WithOrigins(allowedOrigins).AllowAnyMethod().AllowAnyHeader());
 });
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

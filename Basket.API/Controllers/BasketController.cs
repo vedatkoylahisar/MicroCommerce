@@ -60,37 +60,45 @@ namespace Basket.API.Controllers
             var basket = await _repository.GetBasket(checkoutEvent.UserName);
             if (basket == null) return NotFound();
 
-            // Sepeti onaylamadan once Catalog.API'ye stok yeterli mi diye sor. Catalog'a
-            // ulasilamazsa fazla satisi (overselling) riske atmaktansa checkout'u reddediyoruz.
+            // Sepeti onaylamadan once Catalog.API'ye stok VE fiyat sor. Sepetteki fiyat istemciden
+            // geliyor (kullanici tarayicidan degistirmis olabilir), o yuzden siparis Catalog'un
+            // guncel/dogrulanmis fiyatina gore olusturulur - sepetteki fiyata asla guvenilmez.
             var catalogClient = _httpClientFactory.CreateClient("CatalogApi");
-            var stockRequest = basket.Items.Select(i => new { productId = i.ProductId, quantity = i.Quantity });
-            List<StockShortfall>? shortfalls;
+            var verifyRequest = basket.Items.Select(i => new { productId = i.ProductId, quantity = i.Quantity });
+            List<ProductVerification>? verified;
             try
             {
-                var stockResponse = await catalogClient.PostAsJsonAsync("/api/Products/check-stock", stockRequest);
-                if (!stockResponse.IsSuccessStatusCode)
-                    return StatusCode(StatusCodes.Status503ServiceUnavailable, "Stok bilgisi dogrulanamadi, lutfen tekrar deneyin.");
-                shortfalls = await stockResponse.Content.ReadFromJsonAsync<List<StockShortfall>>();
+                var verifyResponse = await catalogClient.PostAsJsonAsync("/api/Products/check-stock", verifyRequest);
+                if (!verifyResponse.IsSuccessStatusCode)
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, "Ürün bilgisi doğrulanamadı, lütfen tekrar deneyin.");
+                verified = await verifyResponse.Content.ReadFromJsonAsync<List<ProductVerification>>();
             }
             catch (HttpRequestException)
             {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Stok bilgisi dogrulanamadi, lutfen tekrar deneyin.");
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Ürün bilgisi doğrulanamadı, lütfen tekrar deneyin.");
             }
 
-            if (shortfalls is { Count: > 0 })
+            if (verified == null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Ürün bilgisi doğrulanamadı, lütfen tekrar deneyin.");
+
+            var shortfalls = verified.Where(v => !v.Sufficient)
+                .Select(v => new StockShortfall(v.ProductId, v.ProductName, v.Requested, v.Available))
+                .ToList();
+            if (shortfalls.Count > 0)
                 return Conflict(new { message = "Bazi urunlerde yeterli stok yok.", items = shortfalls });
 
             // Siparis e-postasi istemciden degil token'dan alinir
             checkoutEvent.EmailAddress = CurrentEmail!;
 
-            checkoutEvent.TotalPrice = basket.TotalPrice;
+            var verifiedPriceByProductId = verified.ToDictionary(v => v.ProductId, v => v.Price);
             checkoutEvent.Items = basket.Items.Select(i => new EventBus.Messages.Events.BasketCheckoutItem
             {
                 ProductId = i.ProductId,
                 ProductName = i.ProductName,
                 Quantity = i.Quantity,
-                Price = i.Price
+                Price = verifiedPriceByProductId.GetValueOrDefault(i.ProductId, i.Price)
             }).ToList();
+            checkoutEvent.TotalPrice = checkoutEvent.Items.Sum(i => i.Price * i.Quantity);
 
             await _publishEndpoint.Publish(checkoutEvent);
             await _repository.DeleteBasket(checkoutEvent.UserName);
@@ -99,5 +107,6 @@ namespace Basket.API.Controllers
         }
 
         private record StockShortfall(string ProductId, string ProductName, int Requested, int Available);
+        private record ProductVerification(string ProductId, string ProductName, decimal Price, int Requested, int Available, bool Sufficient);
     }
 }

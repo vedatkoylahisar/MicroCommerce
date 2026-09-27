@@ -2,6 +2,7 @@ using Identity.API.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -23,6 +24,7 @@ namespace Identity.API.Controllers
         }
 
         [HttpPost("register")]
+        [EnableRateLimiting("register")]
         public async Task<IActionResult> Register(RegisterDto dto)
         {
             var user = new AppUser
@@ -40,6 +42,7 @@ namespace Identity.API.Controllers
         }
 
         [HttpPost("login")]
+        [EnableRateLimiting("login")]
         public async Task<IActionResult> Login(LoginDto dto)
         {
             var user = await _userManager.FindByEmailAsync(dto.Email);
@@ -53,6 +56,7 @@ namespace Identity.API.Controllers
         }
 
         [HttpPost("admin-login")]
+        [EnableRateLimiting("admin-login")]
         public IActionResult AdminLogin([FromBody] AdminLoginDto dto)
         {
             var adminUsername = _config["Admin:Username"];

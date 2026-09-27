@@ -54,6 +54,33 @@ public class CheckoutFlowTests
     }
 
     [Fact]
+    public async Task Checkout_uses_the_server_verified_price_not_the_tampered_client_price()
+    {
+        var adminToken = await _fx.AdminLoginAsync();
+        var product = await _fx.CreateProductAsync(adminToken, stockQuantity: 5, price: 100m);
+        var (email, token) = await _fx.RegisterAndLoginAsync();
+
+        // kotu niyetli/bozuk bir istemci sepete gercek fiyat yerine 1 kurus yaziyor
+        var putBasket = GatewayFixture.WithAuth(HttpMethod.Put, "/api/Basket", token);
+        putBasket.Content = JsonContent.Create(new
+        {
+            userName = email,
+            items = new[] { new { productId = product.Id, productName = product.Name, price = 0.01m, quantity = 2 } }
+        });
+        await _fx.Client.SendAsync(putBasket);
+
+        var checkoutReq = GatewayFixture.WithAuth(HttpMethod.Post, "/api/Basket/checkout", token);
+        checkoutReq.Content = JsonContent.Create(new { userName = email, firstName = "Test", lastName = "User", emailAddress = email });
+        var checkoutRes = await _fx.Client.SendAsync(checkoutReq);
+        Assert.Equal(HttpStatusCode.Accepted, checkoutRes.StatusCode);
+
+        // siparis, sepetteki (kandirilmis) fiyatla degil Catalog'un gercek fiyatiyla olusmali: 100 * 2 = 200
+        var order = await PollUntilOrderExists(email, token);
+        Assert.NotNull(order);
+        Assert.Equal(200m, order!.Value.GetProperty("total").GetDecimal());
+    }
+
+    [Fact]
     public async Task Checkout_is_rejected_when_stock_is_insufficient()
     {
         var adminToken = await _fx.AdminLoginAsync();
