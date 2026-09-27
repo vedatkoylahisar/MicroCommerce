@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
 
@@ -1832,12 +1832,7 @@ function AdminPage({ gateway }) {
                         </div>
                       </div>
                       <div className="chat-messages">
-                        {adminActiveConv.messages?.map(msg => (
-                          <div key={msg.id} className={`chat-bubble ${msg.from === 'seller' ? 'mine' : 'theirs'}`}>
-                            <p>{msg.text}</p>
-                            <span className="bubble-time">{new Date(msg.time).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                        ))}
+                        <ChatMessageList messages={adminActiveConv.messages} mineFrom="seller" />
                       </div>
                       <div className="chat-input-area">
                         <input className="chat-input" placeholder="Satıcı olarak yanıtla..." value={adminReply}
@@ -1862,6 +1857,43 @@ function AdminPage({ gateway }) {
 // Tek magazali bir sistemde karsi taraf hep ayni destek ekibi - kullaniciya "hangi satici"
 // diye sormaya gerek yok, tum konusmalar otomatik olarak buraya aciliyor.
 const STORE_NAME = 'Mağaza Desteği';
+
+const formatMessageTime = (iso) => new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+
+function formatDayLabel(iso) {
+  const d = new Date(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return 'Bugün';
+  const y = new Date(today); y.setDate(y.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'Dün';
+  const sameYear = d.getFullYear() === today.getFullYear();
+  return d.toLocaleDateString('tr-TR', sameYear ? { day: 'numeric', month: 'long' } : { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Mesaj balonlarinda sadece saat gosterilirse, konusma bir gunden fazla surdugunde mesajlar
+// yanlislikla siraLI degilmis gibi gorunur (orn. "23:08" -> "22:48" dun/bugun karisir).
+// Gun degistiginde araya "Bugün" / "Dün" / tarih etiketi koyuyoruz.
+function ChatMessageList({ messages, mineFrom }) {
+  let lastDay = null;
+  return (
+    <>
+      {(messages || []).map(msg => {
+        const day = new Date(msg.time).toDateString();
+        const showSeparator = day !== lastDay;
+        lastDay = day;
+        return (
+          <Fragment key={msg.id}>
+            {showSeparator && <div className="chat-day-separator"><span>{formatDayLabel(msg.time)}</span></div>}
+            <div className={`chat-bubble ${msg.from === mineFrom ? 'mine' : 'theirs'}`}>
+              <p>{msg.text}</p>
+              <span className="bubble-time">{formatMessageTime(msg.time)}</span>
+            </div>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
 
 function MessagesPage({ user, setPage }) {
   const [conversations, setConversations] = useState([]);
@@ -1936,17 +1968,6 @@ function MessagesPage({ user, setPage }) {
     } catch (_) {}
   };
 
-  const formatTime = (iso) => new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-
-  const formatDate = (iso) => {
-    const d = new Date(iso);
-    const today = new Date();
-    if (d.toDateString() === today.toDateString()) return 'Bugün';
-    const y = new Date(today); y.setDate(y.getDate() - 1);
-    if (d.toDateString() === y.toDateString()) return 'Dün';
-    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-  };
-
   if (!user) return null;
 
   return (
@@ -1993,7 +2014,7 @@ function MessagesPage({ user, setPage }) {
                   <div className="conv-info">
                     <div className="conv-top-row">
                       <span className="conv-seller">{conv.sellerName}</span>
-                      <span className="conv-time">{formatDate(conv.lastTime)}</span>
+                      <span className="conv-time">{formatDayLabel(conv.lastTime)}</span>
                     </div>
                     <div className="conv-bottom-row">
                       <span className="conv-preview">{conv.lastMessage}</span>
@@ -2021,12 +2042,7 @@ function MessagesPage({ user, setPage }) {
                   </div>
                 </div>
                 <div className="chat-messages">
-                  {activeConv.messages.map(msg => (
-                    <div key={msg.id} className={`chat-bubble ${msg.from === 'user' ? 'mine' : 'theirs'}`}>
-                      <p>{msg.text}</p>
-                      <span className="bubble-time">{formatTime(msg.time)}</span>
-                    </div>
-                  ))}
+                  <ChatMessageList messages={activeConv.messages} mineFrom="user" />
                 </div>
                 <div className="chat-input-area">
                   <input className="chat-input" placeholder="Mesajınızı yazın..." value={newMessage}
