@@ -303,7 +303,6 @@ function Header({ user, page, setPage, itemCount, logout }) {
     <header className="header">
       <div className="header-inner">
         <div className="logo" onClick={() => setPage('home')}>
-          <span className="logo-icon">⚡</span>
           <span className="logo-text">SwiftShop</span>
         </div>
         <nav className="nav">
@@ -436,6 +435,22 @@ function HomePage({ user, basket, setBasket, setPage, goToShop }) {
       <div className="promo-ticker">
         <div className="promo-ticker-track">
           {Array(6).fill('✦ 5000 TL ve üzeri ücretsiz kargo').map((t, i) => <span key={i}>{t}</span>)}
+        </div>
+      </div>
+
+      <div className="hero">
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <span className="hero-eyebrow">Yeni Sezon</span>
+            <h2>Seçili ürünlerde<br /><em>büyük indirim</em></h2>
+            <p>Binlerce ürünü keşfet, en uygun fiyatlarla hızlıca kapına gelsin.</p>
+            <button className="hero-btn" onClick={() => goToShop()}>Alışverişe Başla</button>
+          </div>
+          <div className="hero-visual">
+            <div className="hero-blob" />
+            <div className="hero-circle" />
+            <span className="hero-visual-emoji">🛍️</span>
+          </div>
         </div>
       </div>
 
@@ -839,7 +854,7 @@ function BasketPage({ user, basket, setBasket, setPage }) {
             <div className="summary-row"><span>Kargo</span><span className="free">Ücretsiz</span></div>
             <div className="summary-total"><span>Toplam</span><span>{total.toLocaleString('tr-TR')} ₺</span></div>
             {checkoutError && <div className="checkout-error">{checkoutError}</div>}
-            <button className="checkout-btn" disabled={selectedCard === null} onClick={placeOrder}>Siparişi Tamamla</button>
+            <button className="checkout-btn btn-cta" disabled={selectedCard === null} onClick={placeOrder}>Siparişi Tamamla</button>
             <button className="btn-secondary" onClick={() => setStep('address')}>Geri</button>
           </div>
         </div>
