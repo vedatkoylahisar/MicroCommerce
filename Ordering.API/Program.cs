@@ -60,6 +60,12 @@ builder.Services.AddHealthChecks()
     .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgres");
 // RabbitMQ baglantisi MassTransit tarafindan otomatik olarak health check'e eklenir
 
+// Siparis iptalinde dusurulen stogu geri eklemek icin Catalog.API'ye servisler-arasi cagri
+builder.Services.AddHttpClient("CatalogApi", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["CatalogApi:BaseUrl"] ?? "http://localhost:5130");
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())

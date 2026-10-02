@@ -81,6 +81,40 @@ public class CheckoutFlowTests
     }
 
     [Fact]
+    public async Task Cancelling_an_order_restocks_its_items()
+    {
+        var adminToken = await _fx.AdminLoginAsync();
+        var product = await _fx.CreateProductAsync(adminToken, stockQuantity: 5, price: 10m);
+        var (email, token) = await _fx.RegisterAndLoginAsync();
+
+        var putBasket = GatewayFixture.WithAuth(HttpMethod.Put, "/api/Basket", token);
+        putBasket.Content = JsonContent.Create(new
+        {
+            userName = email,
+            items = new[] { new { productId = product.Id, productName = product.Name, price = product.Price, quantity = 2 } }
+        });
+        await _fx.Client.SendAsync(putBasket);
+
+        var checkoutReq = GatewayFixture.WithAuth(HttpMethod.Post, "/api/Basket/checkout", token);
+        checkoutReq.Content = JsonContent.Create(new { userName = email, firstName = "Test", lastName = "User", emailAddress = email });
+        await _fx.Client.SendAsync(checkoutReq);
+
+        // siparis olusana ve stok 5'ten 3'e dusene kadar bekle
+        var order = await PollUntilOrderExists(email, token);
+        Assert.NotNull(order);
+        await PollUntilStockEquals(product.Id, expected: 3);
+
+        var orderId = order!.Value.GetProperty("id").GetInt32();
+        var cancelReq = GatewayFixture.WithAuth(HttpMethod.Patch, $"/api/Ordering/orders/{orderId}/cancel", token);
+        var cancelRes = await _fx.Client.SendAsync(cancelReq);
+        Assert.Equal(HttpStatusCode.NoContent, cancelRes.StatusCode);
+
+        // iptal sonrasi stok 3'ten tekrar 5'e donmeli
+        var stockAfterCancel = await PollUntilStockEquals(product.Id, expected: 5);
+        Assert.Equal(5, stockAfterCancel);
+    }
+
+    [Fact]
     public async Task Checkout_is_rejected_when_stock_is_insufficient()
     {
         var adminToken = await _fx.AdminLoginAsync();

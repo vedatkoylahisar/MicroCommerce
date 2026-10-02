@@ -120,10 +120,13 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=OrderingDb;Username=postgres;Password=z6iewFl6GY50I1r8h6A6YFW1
       - RabbitMQ__Host=rabbitmq://rabbitmq
+      - CatalogApi__BaseUrl=http://catalog-api
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      catalog-api:
         condition: service_healthy
 
   messages-api:

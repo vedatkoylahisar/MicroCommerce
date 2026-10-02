@@ -89,6 +89,22 @@ namespace Catalog.API.Controllers
             return Ok(results);
         }
 
+        /// <summary>
+        /// Bir siparis iptal edildiginde Ordering.API tarafindan cagrilir: dusurulmus stogu geri
+        /// ekler. check-stock gibi servisler-arasi bir cagri - prod'da Catalog.API'nin disariya
+        /// acik bir portu olmadigi icin zaten sadece Docker ic agindan erisilebilir.
+        /// </summary>
+        [HttpPost("restock")]
+        public async Task<IActionResult> Restock([FromBody] List<StockCheckItem> items)
+        {
+            foreach (var item in items)
+            {
+                if (string.IsNullOrEmpty(item.ProductId)) continue;
+                await _repository.IncrementStockAsync(item.ProductId, item.Quantity);
+            }
+            return Ok();
+        }
+
         /// <summary>Giris yapmis herhangi bir kullanici urune yorum/puan birakabilir.</summary>
         [HttpPost("{id}/reviews")]
         [Authorize]

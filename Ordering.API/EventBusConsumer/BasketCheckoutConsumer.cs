@@ -34,6 +34,7 @@ namespace Ordering.API.EventBusConsumer
                 TrackingCode = GenerateTrackingCode(),
                 Items = message.Items.Select(i => new OrderItem
                 {
+                    ProductId = i.ProductId,
                     ProductName = i.ProductName,
                     Quantity = i.Quantity,
                     Price = i.Price

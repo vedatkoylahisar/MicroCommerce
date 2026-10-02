@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Ordering.API.Data;
 using Ordering.API.Models;
+using System.Net.Http.Json;
 using System.Security.Claims;
 
 namespace Ordering.API.Controllers
@@ -13,10 +14,42 @@ namespace Ordering.API.Controllers
     public class OrderingController : ControllerBase
     {
         private readonly OrderDbContext _context;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<OrderingController> _logger;
 
-        public OrderingController(OrderDbContext context)
+        public OrderingController(OrderDbContext context, IHttpClientFactory httpClientFactory, ILogger<OrderingController> logger)
         {
             _context = context;
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
+        }
+
+        /// <summary>
+        /// Siparis iptal edildiginde dusurulmus stogu Catalog.API'ye geri ekletir. Catalog'a
+        /// ulasilamazsa siparis yine de iptal kalir (musteri parasini geri almayi bekliyor,
+        /// bunu stok senkron hatasina bagli tutmak daha kotu bir UX olurdu) - sadece logluyoruz.
+        /// Bilinen sinir: bu ayni zamanda onemli bir guvenilirlik eksigi (outbox yok), gercek
+        /// bir dagitik islem degil.
+        /// </summary>
+        private async Task RestockItemsAsync(Order order)
+        {
+            var items = order.Items
+                .Where(i => !string.IsNullOrEmpty(i.ProductId))
+                .Select(i => new { productId = i.ProductId, quantity = i.Quantity })
+                .ToList();
+            if (items.Count == 0) return;
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient("CatalogApi");
+                var res = await client.PostAsJsonAsync("/api/Products/restock", items);
+                if (!res.IsSuccessStatusCode)
+                    _logger.LogWarning("Stok geri eklenemedi (HTTP {Status}). OrderId={OrderId}", res.StatusCode, order.Id);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Stok geri eklenemedi, Catalog.API'ye ulasilamadi. OrderId={OrderId}", order.Id);
+            }
         }
 
         private bool IsOwnerOrAdmin(string? email) =>
@@ -81,22 +114,26 @@ namespace Ordering.API.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateOrderStatus(int id, [FromBody] string status)
         {
-            var order = await _context.Orders.FindAsync(id);
+            var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);
             if (order == null) return NotFound();
 
-            if (Enum.TryParse<OrderStatus>(status, ignoreCase: true, out var newStatus))
-            {
-                order.Status = newStatus;
-                await _context.SaveChangesAsync();
-                return NoContent();
-            }
-            return BadRequest("Geçersiz durum.");
+            if (!Enum.TryParse<OrderStatus>(status, ignoreCase: true, out var newStatus))
+                return BadRequest("Geçersiz durum.");
+
+            var wasAlreadyCancelled = order.Status == OrderStatus.Cancelled;
+            order.Status = newStatus;
+            await _context.SaveChangesAsync();
+
+            if (newStatus == OrderStatus.Cancelled && !wasAlreadyCancelled)
+                await RestockItemsAsync(order);
+
+            return NoContent();
         }
 
         [HttpPatch("orders/{id}/cancel")]
         public async Task<IActionResult> CancelOrder(int id)
         {
-            var order = await _context.Orders.FindAsync(id);
+            var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);
             if (order == null) return NotFound();
             if (!IsOwnerOrAdmin(order.Email)) return Forbid();
             if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
@@ -104,6 +141,7 @@ namespace Ordering.API.Controllers
 
             order.Status = OrderStatus.Cancelled;
             await _context.SaveChangesAsync();
+            await RestockItemsAsync(order);
             return NoContent();
         }
 
